@@ -11,7 +11,8 @@ from src.data_providers.market_data_provider import MarketDataProvider
 from src.models import WatchlistItem
 from src.scanner.stock_scanner import StockScanner
 from src.scoring.scoring_engine import ScoringEngine
-from src.ui_helpers import render_data_warning
+from src.data_providers.base import DataMode
+from src.ui_helpers import build_market_data_provider, render_data_warning
 
 
 def apply_theme() -> None:
@@ -77,10 +78,12 @@ def load_watchlist() -> list[WatchlistItem]:
 
 
 @st.cache_data(ttl=300)
-def load_scored_watchlist(items: list[tuple[str, str]]) -> pd.DataFrame:
-    provider = MarketDataProvider()
+def load_scored_watchlist(
+    items: list[tuple[str, str]], data_mode: DataMode
+) -> pd.DataFrame:
+    provider = MarketDataProvider(mode=data_mode)
     frames = {
-        symbol: provider.get_price_history(symbol, market, days=180)
+        f"{market}:{symbol}": provider.get_price_history(symbol, market, days=180)
         for symbol, market in items
     }
     scanned = StockScanner().scan(frames)
@@ -111,11 +114,17 @@ def main() -> None:
     st.caption(
         "실제 주문 없이 데이터 조회, 스캐너, 공시, 백테스트, 모의매매만 수행하는 MVP입니다."
     )
-    render_data_warning()
+    provider = build_market_data_provider()
 
     watchlist = load_watchlist()
     watchlist_keys = [(item.symbol, item.market) for item in watchlist]
-    scored = load_scored_watchlist(watchlist_keys)
+    scored = load_scored_watchlist(watchlist_keys, provider.mode)
+    if provider.mode == "REAL_WITH_FALLBACK" and not scored.empty:
+        data_sources = set(scored.get("data_source", pd.Series(dtype=str)).dropna())
+        provider.last_data_source = (
+            "SAMPLE_FALLBACK" if "SAMPLE_FALLBACK" in data_sources else "YFINANCE"
+        )
+    render_data_warning(provider)
 
     render_market_summary(scored)
 

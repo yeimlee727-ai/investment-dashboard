@@ -57,6 +57,8 @@ class StockScanner:
                     "trading_value": float(
                         latest.get("trading_value", latest["close"] * latest["volume"])
                     ),
+                    "data_source": str(latest.get("data_source", "")),
+                    "provider": str(latest.get("provider", "")),
                     "volume_ratio": float(volume_ratio),
                     "rsi14": float(latest["rsi14"]),
                     "rsi": float(latest["rsi14"]),
@@ -87,6 +89,8 @@ class StockScanner:
                     "change_pct",
                     "volume",
                     "trading_value",
+                    "data_source",
+                    "provider",
                     "volume_ratio",
                     "rsi14",
                     "rsi",

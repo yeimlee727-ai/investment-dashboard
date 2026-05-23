@@ -7,20 +7,26 @@ import plotly.express as px
 import streamlit as st
 
 from src.backtest.backtest_engine import BacktestEngine
+from src.data_providers.base import DataMode
 from src.data_providers.market_data_provider import MarketDataProvider
-from src.ui_helpers import render_data_warning
+from src.ui_helpers import build_market_data_provider, render_data_warning
 
 
-def load_input_data(symbol: str, market: str, uploaded_file: Any) -> pd.DataFrame:
+def load_input_data(
+    symbol: str, market: str, uploaded_file: Any, data_mode: DataMode
+) -> pd.DataFrame:
     if uploaded_file is not None:
         return pd.read_csv(uploaded_file)
-    return MarketDataProvider().get_price_history(symbol, market, days=260)
+    return MarketDataProvider(mode=data_mode).get_price_history(
+        symbol, market, days=260
+    )
 
 
 def main() -> None:
     st.set_page_config(page_title="백테스트", layout="wide")
     st.title("백테스트")
-    render_data_warning()
+    provider = build_market_data_provider()
+    render_data_warning(provider)
     col1, col2, col3 = st.columns(3)
     symbol = col1.text_input("종목코드", value="005930")
     market = col2.selectbox("시장", ["KR", "US"])
@@ -67,7 +73,11 @@ def main() -> None:
 
     if st.button("실행"):
         try:
-            df = load_input_data(symbol, market, uploaded)
+            df = load_input_data(symbol, market, uploaded, provider.mode)
+            if df.attrs.get("data_source") == "SAMPLE_FALLBACK":
+                st.warning(
+                    "FALLBACK MODE: 실제 데이터 조회 실패로 샘플 데이터 기반 백테스트를 실행합니다."
+                )
             result = BacktestEngine().run(
                 df,
                 strategy=strategy,

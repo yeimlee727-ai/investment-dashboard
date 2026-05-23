@@ -255,10 +255,20 @@ class MockBroker(Broker):
         self, symbol: str, market: str
     ) -> tuple[float | None, str | None]:
         try:
+            if hasattr(self.data_provider, "get_latest_quote"):
+                quote_obj = self.data_provider.get_latest_quote(
+                    symbol=symbol, market=market
+                )
+                if quote_obj.price is None:
+                    return None, quote_obj.error or "현재가 조회 실패"
+                return float(quote_obj.price), quote_obj.error
             quote = self.data_provider.get_quote(symbol=symbol, market=market)
-            return float(quote["price"]), None
-        except Exception:
-            return None, "현재가 조회 실패"
+            price = quote.get("price")
+            if price is None:
+                return None, str(quote.get("error") or "현재가 조회 실패")
+            return float(price), None
+        except Exception as exc:
+            return None, f"현재가 조회 실패: {exc}"
 
     def _get_daily_realized_pnl(self, session: Session) -> float:
         seoul_now = datetime.now(ZoneInfo("Asia/Seoul"))

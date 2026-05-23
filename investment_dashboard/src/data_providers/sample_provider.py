@@ -1,26 +1,28 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 import hashlib
 
 import numpy as np
 import pandas as pd
 
-from src.data_providers.base import DataProvider
+from src.data_providers.base import BaseDataProvider, Quote
 
 
-class SampleDataProvider(DataProvider):
+class SampleDataProvider(BaseDataProvider):
     """Deterministic sample data provider for offline MVP usage."""
 
     def get_price_history(
-        self, symbol: str, market: str = "KR", days: int = 180
+        self, symbol: str, market: str = "KR", period: str | int = 180, **kwargs: object
     ) -> pd.DataFrame:
+        days = self._normalize_period(period, kwargs.get("days"))
+        market = market.upper()
         seed = self._seed_for(symbol, market)
         rng = np.random.default_rng(seed)
         end = date.today()
         dates = [end - timedelta(days=i) for i in range(days * 2)]
         business_dates = sorted([d for d in dates if d.weekday() < 5])[-days:]
-        base_price = 50_000 if market.upper() == "KR" else 150
+        base_price = 50_000 if market == "KR" else 150
         drift = rng.normal(0.0008, 0.018, len(business_dates))
         close = base_price * np.cumprod(1 + drift)
         open_ = close * (1 + rng.normal(0, 0.006, len(close)))
@@ -39,36 +41,69 @@ class SampleDataProvider(DataProvider):
                 "volume": volume,
             }
         )
-        df["change_rate"] = df["close"].pct_change().fillna(0) * 100
-        df["trading_value"] = df["close"] * df["volume"]
+        df["change_pct"] = df["close"].pct_change().fillna(0) * 100
+        df["value_traded"] = df["close"] * df["volume"]
+        df["symbol"] = symbol.upper()
+        df["market"] = market
+        df["data_source"] = "SAMPLE"
+        df["provider"] = self.get_provider_name()
+        df["change_rate"] = df["change_pct"]
+        df["trading_value"] = df["value_traded"]
         numeric_columns = [
             "open",
             "high",
             "low",
             "close",
             "volume",
+            "change_pct",
+            "value_traded",
             "change_rate",
             "trading_value",
         ]
         df[numeric_columns] = df[numeric_columns].round(2)
+        df.attrs["data_source"] = "SAMPLE"
+        df.attrs["provider"] = self.get_provider_name()
+        df.attrs["error"] = None
         return df
 
-    def get_quote(self, symbol: str, market: str = "KR") -> dict[str, float | str]:
-        df = self.get_price_history(symbol=symbol, market=market, days=30)
+    def get_latest_quote(self, symbol: str, market: str = "KR") -> Quote:
+        df = self.get_price_history(symbol=symbol, market=market, period=30)
         latest = df.iloc[-1]
-        return {
-            "symbol": symbol,
-            "market": market,
-            "price": float(latest["close"]),
-            "change_rate": float(latest["change_rate"]),
-            "volume": float(latest["volume"]),
-            "trading_value": float(latest["trading_value"]),
-            "high": float(latest["high"]),
-            "low": float(latest["low"]),
-            "close": float(latest["close"]),
-        }
+        return Quote(
+            symbol=symbol.upper(),
+            market=market.upper(),
+            price=float(latest["close"]),
+            change_pct=float(latest["change_pct"]),
+            volume=float(latest["volume"]),
+            value_traded=float(latest["value_traded"]),
+            currency="KRW" if market.upper() == "KR" else "USD",
+            data_source="SAMPLE",
+            provider=self.get_provider_name(),
+            as_of=datetime.now().isoformat(timespec="seconds"),
+            error=None,
+        )
+
+    def get_provider_name(self) -> str:
+        return "SampleDataProvider"
+
+    def is_sample_mode(self) -> bool:
+        return True
 
     def _seed_for(self, symbol: str, market: str) -> int:
         key = f"{market.upper()}:{symbol.upper()}".encode("utf-8")
         digest = hashlib.sha256(key).hexdigest()
         return int(digest[:16], 16) % (2**32)
+
+    def _normalize_period(self, period: str | int, days: object = None) -> int:
+        if isinstance(days, int):
+            return max(days, 1)
+        if isinstance(period, int):
+            return max(period, 1)
+        period = period.lower().strip()
+        if period.endswith("d"):
+            return max(int(period[:-1]), 1)
+        if period.endswith("mo"):
+            return max(int(period[:-2]) * 21, 1)
+        if period.endswith("y"):
+            return max(int(period[:-1]) * 252, 1)
+        return 180

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
 from sqlalchemy import select
 
 from src.database import get_session, init_db
-from src.data_providers.market_data_provider import MarketDataProvider
 from src.dart.dart_client import DartClient
 from src.models import WatchlistItem
 from src.scanner.stock_scanner import StockScanner
 from src.scoring.scoring_engine import ScoringEngine
-from src.ui_helpers import render_data_warning
+from src.ui_helpers import build_market_data_provider, render_data_warning
 
 
 def load_watchlist_pairs() -> list[tuple[str, str]]:
@@ -22,18 +22,23 @@ def main() -> None:
     st.set_page_config(page_title="종목스캐너", layout="wide")
     init_db()
     st.title("종목 스캐너")
-    provider = MarketDataProvider()
-    render_data_warning(provider)
+    provider = build_market_data_provider()
 
     pairs = load_watchlist_pairs()
     if not pairs:
         st.info("먼저 관심종목을 등록하세요.")
         return
     frames = {
-        symbol: provider.get_price_history(symbol, market, 180)
+        f"{market}:{symbol}": provider.get_price_history(symbol, market, 180)
         for symbol, market in pairs
     }
     scanned = StockScanner().scan(frames)
+    if provider.mode == "REAL_WITH_FALLBACK" and not scanned.empty:
+        data_sources = set(scanned.get("data_source", pd.Series(dtype=str)).dropna())
+        provider.last_data_source = (
+            "SAMPLE_FALLBACK" if "SAMPLE_FALLBACK" in data_sources else "YFINANCE"
+        )
+    render_data_warning(provider)
     disclosures = DartClient().search_disclosures(page_count=20)
     scored = ScoringEngine().score_dataframe(scanned, disclosures=disclosures)
 

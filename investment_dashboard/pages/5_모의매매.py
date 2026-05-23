@@ -6,9 +6,8 @@ from sqlalchemy import select
 from src.broker.base import OrderRequest
 from src.broker.mock_broker import MockBroker
 from src.database import get_session, init_db
-from src.data_providers.market_data_provider import MarketDataProvider
 from src.models import VirtualOrder
-from src.ui_helpers import render_data_warning
+from src.ui_helpers import build_market_data_provider, render_data_warning
 
 
 def load_orders() -> list[VirtualOrder]:
@@ -26,7 +25,7 @@ def main() -> None:
     st.set_page_config(page_title="모의매매", layout="wide")
     init_db()
     st.title("모의매매")
-    provider = MarketDataProvider()
+    provider = build_market_data_provider()
     render_data_warning(provider)
     st.caption(
         "실제 주문은 전송하지 않습니다. 모든 입력은 SQLite에 가상 주문 로그로만 저장됩니다."

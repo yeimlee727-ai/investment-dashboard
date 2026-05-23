@@ -127,7 +127,7 @@ def test_quote_failure_returns_none_and_quote_error(isolated_session) -> None:
 
     assert positions[0]["current_price"] is None
     assert positions[0]["market_value"] is None
-    assert positions[0]["quote_error"] == "현재가 조회 실패"
+    assert str(positions[0]["quote_error"]).startswith("현재가 조회 실패")
 
 
 def test_daily_realized_pnl_uses_asia_seoul_day_boundary(isolated_session) -> None:
