@@ -33,5 +33,5 @@ class Broker(ABC):
         """Place an order through the broker adapter."""
 
     @abstractmethod
-    def get_positions(self) -> list[dict[str, float | int | str]]:
+    def get_positions(self) -> list[dict[str, float | int | str | None]]:
         """Return open positions."""

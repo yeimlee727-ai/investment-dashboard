@@ -76,32 +76,31 @@ class MockBroker(Broker):
 
             return OrderResult(order.id, request.symbol, side, request.quantity, request.price, "filled", "가상 주문 처리 완료", order.created_at)
 
-    def get_positions(self, current_prices: dict[str, float] | None = None) -> list[dict[str, float | int | str]]:
+    def get_positions(self, current_prices: dict[str, float] | None = None) -> list[dict[str, float | int | str | None]]:
         current_prices = current_prices or {}
         with get_session() as session:
             positions = session.execute(select(VirtualPosition).where(VirtualPosition.is_open.is_(True))).scalars().all()
-            rows: list[dict[str, float | int | str]] = []
+            rows: list[dict[str, float | int | str | None]] = []
             for p in positions:
                 price_key = f"{p.market}:{p.symbol}"
-                quote_price, quote_status = self._get_quote_price(p.symbol, p.market)
-                current_price = current_prices.get(price_key) or current_prices.get(p.symbol) or quote_price
-                if current_price <= 0:
-                    quote_status = "현재가 조회 실패"
-                market_value = p.quantity * current_price
-                unrealized_pnl = (current_price - p.avg_price) * p.quantity
-                unrealized_return = (current_price / p.avg_price - 1) * 100 if p.avg_price else 0.0
-                total_pnl = p.realized_pnl + unrealized_pnl
+                override_price = current_prices.get(price_key) or current_prices.get(p.symbol)
+                quote_price, quote_error = self._get_quote_price(p.symbol, p.market)
+                current_price = override_price if override_price is not None else quote_price
+                market_value = p.quantity * current_price if current_price is not None else None
+                unrealized_pnl = (current_price - p.avg_price) * p.quantity if current_price is not None else None
+                unrealized_return = (current_price / p.avg_price - 1) * 100 if current_price is not None and p.avg_price else None
+                total_pnl = p.realized_pnl + unrealized_pnl if unrealized_pnl is not None else p.realized_pnl
                 rows.append(
                     {
                         "symbol": p.symbol,
                         "market": p.market,
                         "quantity": p.quantity,
                         "avg_price": round(p.avg_price, 2),
-                        "current_price": round(current_price, 2),
-                        "price_status": quote_status,
-                        "market_value": round(market_value, 2),
-                        "unrealized_pnl": round(unrealized_pnl, 2),
-                        "unrealized_return": round(unrealized_return, 2),
+                        "current_price": round(current_price, 2) if current_price is not None else None,
+                        "quote_error": quote_error,
+                        "market_value": round(market_value, 2) if market_value is not None else None,
+                        "unrealized_pnl": round(unrealized_pnl, 2) if unrealized_pnl is not None else None,
+                        "unrealized_return": round(unrealized_return, 2) if unrealized_return is not None else None,
                         "realized_pnl": round(p.realized_pnl, 2),
                         "total_pnl": round(total_pnl, 2),
                     }
@@ -150,12 +149,12 @@ class MockBroker(Broker):
         session.flush()
         return OrderResult(order.id, request.symbol, side, request.quantity, request.price, "rejected", message, order.created_at)
 
-    def _get_quote_price(self, symbol: str, market: str) -> tuple[float, str]:
+    def _get_quote_price(self, symbol: str, market: str) -> tuple[float | None, str | None]:
         try:
             quote = self.data_provider.get_quote(symbol=symbol, market=market)
-            return float(quote["price"]), "조회 성공"
+            return float(quote["price"]), None
         except Exception:
-            return 0.0, "현재가 조회 실패"
+            return None, "현재가 조회 실패"
 
     def _get_daily_realized_pnl(self, session: Session) -> float:
         seoul_now = datetime.now(ZoneInfo("Asia/Seoul"))
