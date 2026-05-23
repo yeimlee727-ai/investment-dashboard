@@ -10,8 +10,8 @@ from src.data_providers.base import BaseDataProvider, Quote, empty_price_history
 class ExternalMarketDataProvider(BaseDataProvider):
     """Read-only external quote provider.
 
-    US equities use yfinance when it is installed. KR equities intentionally remain
-    disabled in this MVP because no approved market-data vendor is configured.
+    US equities use their ticker directly. KR equities try yfinance's common
+    KRX suffixes (.KS, then .KQ). This remains read-only market-data access.
     """
 
     def __init__(self) -> None:
@@ -21,14 +21,6 @@ class ExternalMarketDataProvider(BaseDataProvider):
         self, symbol: str, market: str = "KR", period: str | int = 180, **kwargs: object
     ) -> pd.DataFrame:
         market = market.upper()
-        if market != "US":
-            return empty_price_history(
-                symbol=symbol,
-                market=market,
-                data_source="REAL_UNAVAILABLE",
-                provider=self.get_provider_name(),
-                error="국내주식 실시간/조회용 외부 provider는 아직 연결하지 않았습니다.",
-            )
         if self._yf is None:
             return empty_price_history(
                 symbol=symbol,
@@ -40,15 +32,30 @@ class ExternalMarketDataProvider(BaseDataProvider):
 
         try:
             yf_period = self._to_yfinance_period(period, kwargs.get("days"))
-            ticker = self._yf.Ticker(symbol.upper())
-            raw = ticker.history(period=yf_period, auto_adjust=False)
+            raw = pd.DataFrame()
+            used_ticker = ""
+            errors: list[str] = []
+            for ticker_symbol in self._ticker_candidates(symbol, market):
+                try:
+                    ticker = self._yf.Ticker(ticker_symbol)
+                    raw = ticker.history(period=yf_period, auto_adjust=False)
+                    if not raw.empty:
+                        used_ticker = ticker_symbol
+                        break
+                    errors.append(f"{ticker_symbol}: empty")
+                except Exception as exc:
+                    errors.append(f"{ticker_symbol}: {exc}")
             if raw.empty:
                 return empty_price_history(
                     symbol=symbol,
                     market=market,
                     data_source="REAL_NO_DATA",
                     provider=self.get_provider_name(),
-                    error="외부 provider가 빈 가격 데이터를 반환했습니다.",
+                    error=(
+                        "외부 provider가 빈 가격 데이터를 반환했습니다."
+                        if not errors
+                        else "; ".join(errors)
+                    ),
                 )
             df = raw.reset_index()
             df = df.rename(
@@ -69,6 +76,7 @@ class ExternalMarketDataProvider(BaseDataProvider):
             df["market"] = market
             df["data_source"] = "YFINANCE"
             df["provider"] = self.get_provider_name()
+            df["provider_symbol"] = used_ticker
             df["change_pct"] = df["close"].pct_change().fillna(0) * 100
             df["change_rate"] = df["change_pct"]
             df["trading_value"] = df["value_traded"]
@@ -87,12 +95,6 @@ class ExternalMarketDataProvider(BaseDataProvider):
 
     def get_latest_quote(self, symbol: str, market: str = "KR") -> Quote:
         market = market.upper()
-        if market != "US":
-            return self._failed_quote(
-                symbol,
-                market,
-                "국내주식 실시간/조회용 외부 provider는 아직 연결하지 않았습니다.",
-            )
         history = self.get_price_history(symbol=symbol, market=market, period="5d")
         if history.empty:
             return self._failed_quote(
@@ -108,7 +110,7 @@ class ExternalMarketDataProvider(BaseDataProvider):
             change_pct=float(latest["change_pct"]),
             volume=float(latest["volume"]),
             value_traded=float(latest["value_traded"]),
-            currency="USD",
+            currency="KRW" if market == "KR" else "USD",
             data_source=str(latest["data_source"]),
             provider=self.get_provider_name(),
             as_of=datetime.now().isoformat(timespec="seconds"),
@@ -150,6 +152,17 @@ class ExternalMarketDataProvider(BaseDataProvider):
         if isinstance(period, int):
             return f"{max(period, 1)}d"
         return period
+
+    def _ticker_candidates(self, symbol: str, market: str) -> list[str]:
+        symbol = symbol.upper().strip()
+        market = market.upper().strip()
+        if market == "US":
+            return [symbol]
+        if market == "KR":
+            if symbol.endswith((".KS", ".KQ")):
+                return [symbol]
+            return [f"{symbol}.KS", f"{symbol}.KQ"]
+        return [symbol]
 
 
 RealMarketDataProvider = ExternalMarketDataProvider

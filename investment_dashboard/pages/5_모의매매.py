@@ -71,6 +71,10 @@ def main() -> None:
     )
     positions = broker.get_positions(current_prices=price_overrides)
     st.dataframe(positions, hide_index=True, use_container_width=True)
+    if any(position.get("quote_error") for position in positions):
+        st.warning(
+            "일부 포지션은 현재가 조회에 실패했습니다. quote_error 컬럼을 확인하세요."
+        )
 
     st.subheader("가상 주문 로그")
     orders = load_orders()

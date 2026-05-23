@@ -5,6 +5,7 @@ from datetime import datetime
 import pandas as pd
 
 from src.data_providers.base import BaseDataProvider, Quote, empty_price_history
+from src.data_providers.external_market_data_provider import ExternalMarketDataProvider
 from src.data_providers.market_data_provider import MarketDataProvider
 
 
@@ -154,3 +155,11 @@ def test_successful_real_provider_preserves_provider_and_data_source() -> None:
     assert provider.is_fallback_mode() is False
     assert quote.data_source == "YFINANCE"
     assert quote.provider == "SuccessfulRealProvider"
+
+
+def test_external_provider_uses_yfinance_ticker_candidates() -> None:
+    provider = ExternalMarketDataProvider()
+
+    assert provider._ticker_candidates("AAPL", "US") == ["AAPL"]
+    assert provider._ticker_candidates("005930", "KR") == ["005930.KS", "005930.KQ"]
+    assert provider._ticker_candidates("091990.KQ", "KR") == ["091990.KQ"]

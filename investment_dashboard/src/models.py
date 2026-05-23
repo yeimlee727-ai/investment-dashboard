@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database import Base
+
+
+def utc_now() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 class WatchlistItem(Base):
@@ -17,7 +21,7 @@ class WatchlistItem(Base):
     market: Mapped[str] = mapped_column(String(20), default="KR")
     sector: Mapped[str] = mapped_column(String(80), default="")
     memo: Mapped[str] = mapped_column(Text, default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 class PriceBar(Base):
@@ -46,7 +50,7 @@ class VirtualOrder(Base):
     price: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(20), default="filled")
     reason: Mapped[str] = mapped_column(String(120), default="")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now)
 
 
 class VirtualPosition(Base):
@@ -60,7 +64,7 @@ class VirtualPosition(Base):
     realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
     is_open: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+        DateTime, default=utc_now, onupdate=utc_now
     )
 
 
@@ -74,6 +78,4 @@ class RealizedPnlLog(Base):
     entry_price: Mapped[float] = mapped_column(Float)
     exit_price: Mapped[float] = mapped_column(Float)
     realized_pnl: Mapped[float] = mapped_column(Float)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, index=True
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utc_now, index=True)

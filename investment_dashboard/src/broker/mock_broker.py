@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from src.broker.base import Broker, OrderRequest, OrderResult
 from src.database import get_session
 from src.data_providers.market_data_provider import MarketDataProvider
-from src.models import RealizedPnlLog, VirtualOrder, VirtualPosition
+from src.models import RealizedPnlLog, VirtualOrder, VirtualPosition, utc_now
 from src.risk.risk_engine import RiskEngine
 
 
@@ -199,7 +199,7 @@ class MockBroker(Broker):
         )
         position.quantity += request.quantity
         position.avg_price = total_cost / position.quantity
-        position.updated_at = datetime.utcnow()
+        position.updated_at = utc_now()
 
     def _apply_sell(
         self,
@@ -214,7 +214,7 @@ class MockBroker(Broker):
         position.realized_pnl += realized
         position.quantity -= request.quantity
         position.is_open = position.quantity > 0
-        position.updated_at = datetime.utcnow()
+        position.updated_at = utc_now()
         session.add(
             RealizedPnlLog(
                 symbol=request.symbol,

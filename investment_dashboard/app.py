@@ -144,6 +144,7 @@ def main() -> None:
                         "rsi14",
                         "rs_score",
                         "near_high_rate",
+                        "data_source",
                     ]
                 ],
                 use_container_width=True,
