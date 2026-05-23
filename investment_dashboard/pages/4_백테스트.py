@@ -24,16 +24,46 @@ def main() -> None:
     col1, col2, col3 = st.columns(3)
     symbol = col1.text_input("종목코드", value="005930")
     market = col2.selectbox("시장", ["KR", "US"])
-    strategy = col3.selectbox("전략", ["EMA20 상향 돌파 + 거래량 증가", "RSI 30 이하 반등", "신고가 돌파"])
-    uploaded = st.file_uploader("CSV 업로드(date, open, high, low, close, volume)", type=["csv"])
-    initial_cash = st.number_input("초기자금", min_value=100_000, value=10_000_000, step=100_000)
-    fee_rate = st.number_input("수수료율", min_value=0.0, max_value=0.01, value=0.00015, step=0.00005, format="%.5f")
-    slippage_rate = st.number_input("슬리피지율", min_value=0.0, max_value=0.02, value=0.0005, step=0.0001, format="%.5f")
-    position_size_pct = st.slider("1회 진입 비중", min_value=0.05, max_value=1.0, value=0.2, step=0.05)
-    stop_take_basis_label = st.radio("손절/익절 판정 기준", ["종가 기준 백테스트", "장중 터치 기준 백테스트"], horizontal=True)
-    stop_take_basis = "intraday" if stop_take_basis_label == "장중 터치 기준 백테스트" else "close"
+    strategy = col3.selectbox(
+        "전략", ["EMA20 상향 돌파 + 거래량 증가", "RSI 30 이하 반등", "신고가 돌파"]
+    )
+    uploaded = st.file_uploader(
+        "CSV 업로드(date, open, high, low, close, volume)", type=["csv"]
+    )
+    initial_cash = st.number_input(
+        "초기자금", min_value=100_000, value=10_000_000, step=100_000
+    )
+    fee_rate = st.number_input(
+        "수수료율",
+        min_value=0.0,
+        max_value=0.01,
+        value=0.00015,
+        step=0.00005,
+        format="%.5f",
+    )
+    slippage_rate = st.number_input(
+        "슬리피지율",
+        min_value=0.0,
+        max_value=0.02,
+        value=0.0005,
+        step=0.0001,
+        format="%.5f",
+    )
+    position_size_pct = st.slider(
+        "1회 진입 비중", min_value=0.05, max_value=1.0, value=0.2, step=0.05
+    )
+    stop_take_basis_label = st.radio(
+        "손절/익절 판정 기준",
+        ["종가 기준 백테스트", "장중 터치 기준 백테스트"],
+        horizontal=True,
+    )
+    stop_take_basis = (
+        "intraday" if stop_take_basis_label == "장중 터치 기준 백테스트" else "close"
+    )
     if stop_take_basis == "intraday":
-        st.caption("장중 터치 기준에서 손절과 익절이 같은 봉에 동시에 발생하면 손절을 우선 처리합니다.")
+        st.caption(
+            "장중 터치 기준에서 손절과 익절이 같은 봉에 동시에 발생하면 손절을 우선 처리합니다."
+        )
 
     if st.button("실행"):
         try:
@@ -59,7 +89,10 @@ def main() -> None:
             c7.metric("총 수수료", f"{result.total_fees:,.0f}")
             c8.metric("슬리피지 비용", f"{result.total_slippage:,.0f}")
             c9.metric("평균 보유기간", f"{result.average_holding_days:.1f}일")
-            st.plotly_chart(px.line(result.equity_curve, x="date", y="equity"), use_container_width=True)
+            st.plotly_chart(
+                px.line(result.equity_curve, x="date", y="equity"),
+                use_container_width=True,
+            )
             st.dataframe(result.trades, hide_index=True, use_container_width=True)
         except Exception as exc:
             st.error(f"백테스트 실패: {exc}")

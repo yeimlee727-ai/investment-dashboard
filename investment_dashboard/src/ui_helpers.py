@@ -14,4 +14,6 @@ def render_data_warning(provider: MarketDataProvider | None = None) -> None:
             "이 앱은 실제 주문을 하지 않으며 투자 판단용으로 사용하면 안 됩니다."
         )
     else:
-        st.info("연결된 데이터 공급자를 사용 중입니다. 실제 주문 기능은 포함되어 있지 않습니다.")
+        st.info(
+            "연결된 데이터 공급자를 사용 중입니다. 실제 주문 기능은 포함되어 있지 않습니다."
+        )

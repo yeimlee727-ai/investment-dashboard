@@ -13,7 +13,13 @@ from src.ui_helpers import render_data_warning
 
 def load_orders() -> list[VirtualOrder]:
     with get_session() as session:
-        return list(session.execute(select(VirtualOrder).order_by(VirtualOrder.created_at.desc())).scalars().all())
+        return list(
+            session.execute(
+                select(VirtualOrder).order_by(VirtualOrder.created_at.desc())
+            )
+            .scalars()
+            .all()
+        )
 
 
 def main() -> None:
@@ -22,7 +28,9 @@ def main() -> None:
     st.title("모의매매")
     provider = MarketDataProvider()
     render_data_warning(provider)
-    st.caption("실제 주문은 전송하지 않습니다. 모든 입력은 SQLite에 가상 주문 로그로만 저장됩니다.")
+    st.caption(
+        "실제 주문은 전송하지 않습니다. 모든 입력은 SQLite에 가상 주문 로그로만 저장됩니다."
+    )
 
     broker = MockBroker(data_provider=provider)
     with st.form("virtual_order"):
@@ -57,7 +65,11 @@ def main() -> None:
     manual_symbol = col_a.text_input("평가 현재가 수동 입력 종목", value="005930")
     manual_market = col_b.selectbox("평가 시장구분", ["KR", "US"])
     manual_price = col_c.number_input("평가 현재가 수동 입력", min_value=0.0, value=0.0)
-    price_overrides = {f"{manual_market}:{manual_symbol.strip().upper()}": float(manual_price)} if manual_price > 0 else {}
+    price_overrides = (
+        {f"{manual_market}:{manual_symbol.strip().upper()}": float(manual_price)}
+        if manual_price > 0
+        else {}
+    )
     positions = broker.get_positions(current_prices=price_overrides)
     st.dataframe(positions, hide_index=True, use_container_width=True)
 

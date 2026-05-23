@@ -95,6 +95,17 @@ streamlit run app.py
 
 브라우저에서 표시되는 로컬 주소로 접속하면 됩니다.
 
+## 개발 중 DB 초기화
+
+개발 단계에서는 `models.py`의 테이블 구조가 바뀌면 기존 SQLite DB와 충돌할 수 있습니다.
+컬럼 추가, 타입 변경, 테이블 추가 후 실행 오류가 발생하면 앱을 종료한 뒤 아래 파일을 삭제하고 다시 실행하세요.
+
+```text
+db/investment_dashboard.sqlite3
+```
+
+파일을 삭제한 뒤 `streamlit run app.py`를 다시 실행하면 SQLite DB가 현재 모델 기준으로 재생성됩니다.
+
 ## 프로젝트 구조
 
 ```text

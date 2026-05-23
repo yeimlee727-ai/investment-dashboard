@@ -12,7 +12,9 @@ from src.data_providers.base import DataProvider
 class SampleDataProvider(DataProvider):
     """Deterministic sample data provider for offline MVP usage."""
 
-    def get_price_history(self, symbol: str, market: str = "KR", days: int = 180) -> pd.DataFrame:
+    def get_price_history(
+        self, symbol: str, market: str = "KR", days: int = 180
+    ) -> pd.DataFrame:
         seed = self._seed_for(symbol, market)
         rng = np.random.default_rng(seed)
         end = date.today()
@@ -39,7 +41,15 @@ class SampleDataProvider(DataProvider):
         )
         df["change_rate"] = df["close"].pct_change().fillna(0) * 100
         df["trading_value"] = df["close"] * df["volume"]
-        numeric_columns = ["open", "high", "low", "close", "volume", "change_rate", "trading_value"]
+        numeric_columns = [
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "change_rate",
+            "trading_value",
+        ]
         df[numeric_columns] = df[numeric_columns].round(2)
         return df
 

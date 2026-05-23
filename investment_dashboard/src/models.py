@@ -59,7 +59,9 @@ class VirtualPosition(Base):
     avg_price: Mapped[float] = mapped_column(Float)
     realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
     is_open: Mapped[bool] = mapped_column(Boolean, default=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
 
 class RealizedPnlLog(Base):
@@ -72,4 +74,6 @@ class RealizedPnlLog(Base):
     entry_price: Mapped[float] = mapped_column(Float)
     exit_price: Mapped[float] = mapped_column(Float)
     realized_pnl: Mapped[float] = mapped_column(Float)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, index=True
+    )

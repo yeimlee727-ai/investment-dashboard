@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pandas as pd
 import streamlit as st
 from sqlalchemy import select
 
@@ -30,7 +29,10 @@ def main() -> None:
     if not pairs:
         st.info("먼저 관심종목을 등록하세요.")
         return
-    frames = {symbol: provider.get_price_history(symbol, market, 180) for symbol, market in pairs}
+    frames = {
+        symbol: provider.get_price_history(symbol, market, 180)
+        for symbol, market in pairs
+    }
     scanned = StockScanner().scan(frames)
     disclosures = DartClient().search_disclosures(page_count=20)
     scored = ScoringEngine().score_dataframe(scanned, disclosures=disclosures)
@@ -51,7 +53,11 @@ def main() -> None:
     for label in filters:
         view = view[view[mapping[label]]]
 
-    st.dataframe(view.sort_values("score", ascending=False), hide_index=True, use_container_width=True)
+    st.dataframe(
+        view.sort_values("score", ascending=False),
+        hide_index=True,
+        use_container_width=True,
+    )
     if not view.empty:
         selected = st.selectbox("AI 코멘트 프롬프트 확인", view["symbol"].tolist())
         prompt = str(view.loc[view["symbol"] == selected, "comment_prompt"].iloc[0])

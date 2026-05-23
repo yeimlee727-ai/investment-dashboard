@@ -4,7 +4,9 @@ import numpy as np
 import pandas as pd
 
 
-def calculate_rsi(close: pd.Series, period: int = 14, method: str = "simple") -> pd.Series:
+def calculate_rsi(
+    close: pd.Series, period: int = 14, method: str = "simple"
+) -> pd.Series:
     delta = close.diff()
     gain_raw = delta.clip(lower=0)
     loss_raw = -delta.clip(upper=0)
@@ -32,7 +34,9 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     return true_range.rolling(period).mean().fillna(true_range.expanding().mean())
 
 
-def add_technical_indicators(df: pd.DataFrame, rsi_method: str = "wilder") -> pd.DataFrame:
+def add_technical_indicators(
+    df: pd.DataFrame, rsi_method: str = "wilder"
+) -> pd.DataFrame:
     required = {"date", "open", "high", "low", "close", "volume"}
     if missing := required - set(df.columns):
         raise ValueError(f"필수 가격 컬럼 누락: {', '.join(sorted(missing))}")
@@ -51,9 +55,13 @@ def add_technical_indicators(df: pd.DataFrame, rsi_method: str = "wilder") -> pd
     result["volume_ma20"] = result["volume"].rolling(20).mean()
     high_window = 252 if len(result) >= 252 else max(20, len(result))
     high_column = "52w_high" if len(result) >= 252 else "period_high"
-    result[high_column] = result["high"].rolling(high_window, min_periods=min(20, high_window)).max()
+    result[high_column] = (
+        result["high"].rolling(high_window, min_periods=min(20, high_window)).max()
+    )
     result["reference_high"] = result[high_column]
-    result["near_high_rate"] = (result["close"] / result["reference_high"].replace(0, np.nan) * 100).fillna(0)
+    result["near_high_rate"] = (
+        result["close"] / result["reference_high"].replace(0, np.nan) * 100
+    ).fillna(0)
     result["return_20d"] = result["close"].pct_change(20).fillna(0) * 100
     result["return_60d"] = result["close"].pct_change(60).fillna(0) * 100
     return result
@@ -65,16 +73,26 @@ def latest_snapshot(df: pd.DataFrame) -> dict[str, float]:
     previous = enriched.iloc[-2] if len(enriched) > 1 else latest
     return {
         "close": float(latest["close"]),
-        "change_rate": float((latest["close"] / previous["close"] - 1) * 100) if previous["close"] else 0.0,
+        "change_rate": (
+            float((latest["close"] / previous["close"] - 1) * 100)
+            if previous["close"]
+            else 0.0
+        ),
         "volume": float(latest["volume"]),
-        "trading_value": float(latest.get("trading_value", latest["close"] * latest["volume"])),
+        "trading_value": float(
+            latest.get("trading_value", latest["close"] * latest["volume"])
+        ),
         "rsi14": float(latest["rsi14"]),
         "ema20": float(latest["ema20"]),
         "ema60": float(latest["ema60"]),
         "macd": float(latest["macd"]),
         "atr14": float(latest["atr14"]),
-        "volume_ma5": float(latest["volume_ma5"]) if not np.isnan(latest["volume_ma5"]) else 0.0,
-        "volume_ma20": float(latest["volume_ma20"]) if not np.isnan(latest["volume_ma20"]) else 0.0,
+        "volume_ma5": (
+            float(latest["volume_ma5"]) if not np.isnan(latest["volume_ma5"]) else 0.0
+        ),
+        "volume_ma20": (
+            float(latest["volume_ma20"]) if not np.isnan(latest["volume_ma20"]) else 0.0
+        ),
         "near_high_rate": float(latest["near_high_rate"]),
         "reference_high": float(latest["reference_high"]),
         "return_20d": float(latest["return_20d"]),

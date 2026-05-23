@@ -17,7 +17,9 @@ class ScoringEngine:
         "risk_control": 0.10,
     }
 
-    def score_row(self, row: pd.Series | dict[str, float | bool | str], event_bonus: float = 0.0) -> dict[str, float | str]:
+    def score_row(
+        self, row: pd.Series | dict[str, float | bool | str], event_bonus: float = 0.0
+    ) -> dict[str, float | str]:
         close = float(row.get("close", 0) or 0)
         ema20 = float(row.get("ema20", close) or close)
         ema60 = float(row.get("ema60", close) or close)
@@ -72,29 +74,45 @@ class ScoringEngine:
             "comment_prompt": self.make_comment_prompt(row, rs_score, volume_ratio),
         }
 
-    def score_dataframe(self, df: pd.DataFrame, disclosures: pd.DataFrame | None = None) -> pd.DataFrame:
+    def score_dataframe(
+        self, df: pd.DataFrame, disclosures: pd.DataFrame | None = None
+    ) -> pd.DataFrame:
         if df.empty:
             return df
         scored = df.copy()
         if disclosures is not None and not disclosures.empty:
             scored = self._attach_disclosure_context(scored, disclosures)
         score_rows = [self.score_row(row) for _, row in scored.iterrows()]
-        return pd.concat([scored.reset_index(drop=True), pd.DataFrame(score_rows)], axis=1)
+        return pd.concat(
+            [scored.reset_index(drop=True), pd.DataFrame(score_rows)], axis=1
+        )
 
-    def _attach_disclosure_context(self, df: pd.DataFrame, disclosures: pd.DataFrame) -> pd.DataFrame:
+    def _attach_disclosure_context(
+        self, df: pd.DataFrame, disclosures: pd.DataFrame
+    ) -> pd.DataFrame:
         if "stock_code" not in disclosures.columns:
             return df
         severity = {"위험": 3, "주의": 2, "중립": 1, "긍정": 0}
         context = disclosures.copy()
         context["severity"] = context.get("risk_tag", "중립").map(severity).fillna(1)
-        context = context.sort_values(["stock_code", "severity"], ascending=[True, False]).drop_duplicates("stock_code")
-        mapping = context.set_index("stock_code")[["disclosure_type", "risk_tag"]].to_dict("index")
+        context = context.sort_values(
+            ["stock_code", "severity"], ascending=[True, False]
+        ).drop_duplicates("stock_code")
+        mapping = context.set_index("stock_code")[
+            ["disclosure_type", "risk_tag"]
+        ].to_dict("index")
         enriched = df.copy()
-        enriched["disclosure_type"] = enriched["symbol"].map(lambda symbol: mapping.get(symbol, {}).get("disclosure_type", ""))
-        enriched["risk_tag"] = enriched["symbol"].map(lambda symbol: mapping.get(symbol, {}).get("risk_tag", ""))
+        enriched["disclosure_type"] = enriched["symbol"].map(
+            lambda symbol: mapping.get(symbol, {}).get("disclosure_type", "")
+        )
+        enriched["risk_tag"] = enriched["symbol"].map(
+            lambda symbol: mapping.get(symbol, {}).get("risk_tag", "")
+        )
         return enriched
 
-    def _event_score(self, disclosure_type: str, risk_tag: str, event_bonus: float) -> float:
+    def _event_score(
+        self, disclosure_type: str, risk_tag: str, event_bonus: float
+    ) -> float:
         base_by_tag = {"긍정": 72, "중립": 50, "주의": 35, "위험": 15}
         type_adjustment = {
             "공급계약": 8,
@@ -107,9 +125,18 @@ class ScoringEngine:
             "감사의견": -25,
             "기타": 0,
         }
-        return clamp(base_by_tag.get(risk_tag, 50) + type_adjustment.get(disclosure_type, 0) + event_bonus)
+        return clamp(
+            base_by_tag.get(risk_tag, 50)
+            + type_adjustment.get(disclosure_type, 0)
+            + event_bonus
+        )
 
-    def make_comment_prompt(self, row: pd.Series | dict[str, float | bool | str], rs_score: float, volume_ratio: float) -> str:
+    def make_comment_prompt(
+        self,
+        row: pd.Series | dict[str, float | bool | str],
+        rs_score: float,
+        volume_ratio: float,
+    ) -> str:
         symbol = str(row.get("symbol", "이 종목"))
         rsi = float(row.get("rsi14", 50) or 50)
         near_high = float(row.get("near_high_rate", 0) or 0)

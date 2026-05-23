@@ -15,7 +15,9 @@ class Base(DeclarativeBase):
 
 
 engine = create_engine(settings.resolved_database_url, echo=False, future=True)
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False, future=True)
+SessionLocal = sessionmaker(
+    bind=engine, autocommit=False, autoflush=False, expire_on_commit=False, future=True
+)
 
 
 def init_db() -> None:
@@ -39,11 +41,17 @@ def _apply_lightweight_sqlite_migrations() -> None:
     if "virtual_orders" in table_names:
         columns = {column["name"] for column in inspector.get_columns("virtual_orders")}
         if "market" not in columns:
-            migrations.append("ALTER TABLE virtual_orders ADD COLUMN market VARCHAR(20) DEFAULT 'KR'")
+            migrations.append(
+                "ALTER TABLE virtual_orders ADD COLUMN market VARCHAR(20) DEFAULT 'KR'"
+            )
     if "virtual_positions" in table_names:
-        columns = {column["name"] for column in inspector.get_columns("virtual_positions")}
+        columns = {
+            column["name"] for column in inspector.get_columns("virtual_positions")
+        }
         if "market" not in columns:
-            migrations.append("ALTER TABLE virtual_positions ADD COLUMN market VARCHAR(20) DEFAULT 'KR'")
+            migrations.append(
+                "ALTER TABLE virtual_positions ADD COLUMN market VARCHAR(20) DEFAULT 'KR'"
+            )
     if migrations:
         with engine.begin() as connection:
             for statement in migrations:

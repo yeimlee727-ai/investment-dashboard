@@ -20,9 +20,13 @@ class MarketDataProvider(DataProvider):
     def is_sample_mode(self) -> bool:
         return isinstance(self.fallback_provider, SampleDataProvider)
 
-    def get_price_history(self, symbol: str, market: str = "KR", days: int = 180) -> pd.DataFrame:
+    def get_price_history(
+        self, symbol: str, market: str = "KR", days: int = 180
+    ) -> pd.DataFrame:
         try:
-            return self.fallback_provider.get_price_history(symbol=symbol, market=market, days=days)
+            return self.fallback_provider.get_price_history(
+                symbol=symbol, market=market, days=days
+            )
         except Exception as exc:
             raise RuntimeError(f"가격 데이터 조회 실패: {symbol}") from exc
 

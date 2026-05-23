@@ -10,19 +10,31 @@ from src.ui_helpers import render_data_warning
 
 def load_items() -> list[WatchlistItem]:
     with get_session() as session:
-        return list(session.execute(select(WatchlistItem).order_by(WatchlistItem.created_at.desc())).scalars().all())
+        return list(
+            session.execute(
+                select(WatchlistItem).order_by(WatchlistItem.created_at.desc())
+            )
+            .scalars()
+            .all()
+        )
 
 
 def add_item(symbol: str, name: str, market: str, sector: str, memo: str) -> None:
     with get_session() as session:
-        existing = session.execute(select(WatchlistItem).where(WatchlistItem.symbol == symbol)).scalar_one_or_none()
+        existing = session.execute(
+            select(WatchlistItem).where(WatchlistItem.symbol == symbol)
+        ).scalar_one_or_none()
         if existing:
             existing.name = name
             existing.market = market
             existing.sector = sector
             existing.memo = memo
         else:
-            session.add(WatchlistItem(symbol=symbol, name=name, market=market, sector=sector, memo=memo))
+            session.add(
+                WatchlistItem(
+                    symbol=symbol, name=name, market=market, sector=sector, memo=memo
+                )
+            )
 
 
 def remove_item(symbol: str) -> None:
@@ -48,7 +60,13 @@ def main() -> None:
             if not symbol or not name:
                 st.error("종목코드와 종목명은 필수입니다.")
             else:
-                add_item(symbol.strip().upper(), name.strip(), market, sector.strip(), memo.strip())
+                add_item(
+                    symbol.strip().upper(),
+                    name.strip(),
+                    market,
+                    sector.strip(),
+                    memo.strip(),
+                )
                 st.success("저장했습니다.")
 
     items = load_items()
@@ -57,7 +75,16 @@ def main() -> None:
         st.info("등록된 관심종목이 없습니다.")
         return
     st.dataframe(
-        [{"symbol": i.symbol, "name": i.name, "market": i.market, "sector": i.sector, "memo": i.memo} for i in items],
+        [
+            {
+                "symbol": i.symbol,
+                "name": i.name,
+                "market": i.market,
+                "sector": i.sector,
+                "memo": i.memo,
+            }
+            for i in items
+        ],
         hide_index=True,
         use_container_width=True,
     )

@@ -26,16 +26,28 @@ class StockScanner:
         for symbol, df in enriched_frames.items():
             latest = df.iloc[-1]
             prev = df.iloc[-2] if len(df) > 1 else latest
-            high_reference_name = "52w_high" if "52w_high" in df.columns else "period_high"
-            volume_ratio = latest["volume"] / latest["volume_ma20"] if latest["volume_ma20"] else 0
-            ema_breakout = prev["close"] <= prev["ema20"] and latest["close"] > latest["ema20"]
+            high_reference_name = (
+                "52w_high" if "52w_high" in df.columns else "period_high"
+            )
+            volume_ratio = (
+                latest["volume"] / latest["volume_ma20"] if latest["volume_ma20"] else 0
+            )
+            ema_breakout = (
+                prev["close"] <= prev["ema20"] and latest["close"] > latest["ema20"]
+            )
             rows.append(
                 {
                     "symbol": symbol,
                     "close": float(latest["close"]),
-                    "change_rate": float((latest["close"] / prev["close"] - 1) * 100) if prev["close"] else 0.0,
+                    "change_rate": (
+                        float((latest["close"] / prev["close"] - 1) * 100)
+                        if prev["close"]
+                        else 0.0
+                    ),
                     "volume": float(latest["volume"]),
-                    "trading_value": float(latest.get("trading_value", latest["close"] * latest["volume"])),
+                    "trading_value": float(
+                        latest.get("trading_value", latest["close"] * latest["volume"])
+                    ),
                     "volume_ratio": float(volume_ratio),
                     "rsi14": float(latest["rsi14"]),
                     "ema20": float(latest["ema20"]),
@@ -82,4 +94,6 @@ class StockScanner:
                     "near_high",
                 ]
             )
-        return pd.DataFrame(rows).sort_values(["rs_score", "volume_ratio"], ascending=False)
+        return pd.DataFrame(rows).sort_values(
+            ["rs_score", "volume_ratio"], ascending=False
+        )

@@ -16,7 +16,11 @@ from src.risk.risk_engine import RiskEngine
 class MockBroker(Broker):
     """Virtual broker that records simulated fills only."""
 
-    def __init__(self, risk_engine: RiskEngine | None = None, data_provider: MarketDataProvider | None = None) -> None:
+    def __init__(
+        self,
+        risk_engine: RiskEngine | None = None,
+        data_provider: MarketDataProvider | None = None,
+    ) -> None:
         self.risk_engine = risk_engine or RiskEngine()
         self.data_provider = data_provider or MarketDataProvider()
 
@@ -25,13 +29,21 @@ class MockBroker(Broker):
         market = request.market.upper()
         with get_session() as session:
             if request.quantity <= 0:
-                return self._record_rejected_order(session, request, side, "가상 수량은 0보다 커야 합니다.")
+                return self._record_rejected_order(
+                    session, request, side, "가상 수량은 0보다 커야 합니다."
+                )
             if request.price <= 0:
-                return self._record_rejected_order(session, request, side, "가상 가격은 0보다 커야 합니다.")
+                return self._record_rejected_order(
+                    session, request, side, "가상 가격은 0보다 커야 합니다."
+                )
             if market not in {"KR", "US"}:
-                return self._record_rejected_order(session, request, side, "시장구분은 KR 또는 US만 지원합니다.")
+                return self._record_rejected_order(
+                    session, request, side, "시장구분은 KR 또는 US만 지원합니다."
+                )
             if side not in {"BUY", "SELL"}:
-                return self._record_rejected_order(session, request, side, "지원하지 않는 가상 주문 구분입니다.")
+                return self._record_rejected_order(
+                    session, request, side, "지원하지 않는 가상 주문 구분입니다."
+                )
 
             position = session.execute(
                 select(VirtualPosition).where(
@@ -42,8 +54,15 @@ class MockBroker(Broker):
             ).scalar_one_or_none()
             exposure = (position.quantity * position.avg_price) if position else 0.0
             daily_realized_pnl = self._get_daily_realized_pnl(session)
-            if side == "SELL" and (position is None or position.quantity < request.quantity):
-                return self._record_rejected_order(session, request, side, "보유 수량이 부족해 가상 매도를 처리할 수 없습니다.")
+            if side == "SELL" and (
+                position is None or position.quantity < request.quantity
+            ):
+                return self._record_rejected_order(
+                    session,
+                    request,
+                    side,
+                    "보유 수량이 부족해 가상 매도를 처리할 수 없습니다.",
+                )
 
             decision = self.risk_engine.validate_order(
                 symbol=request.symbol,
@@ -55,7 +74,9 @@ class MockBroker(Broker):
                 has_open_position=position is not None,
             )
             if not decision.allowed:
-                return self._record_rejected_order(session, request, side, decision.reason)
+                return self._record_rejected_order(
+                    session, request, side, decision.reason
+                )
 
             order = VirtualOrder(
                 symbol=request.symbol,
@@ -74,49 +95,119 @@ class MockBroker(Broker):
             else:
                 self._apply_sell(session, request, position, market)
 
-            return OrderResult(order.id, request.symbol, side, request.quantity, request.price, "filled", "가상 주문 처리 완료", order.created_at)
+            return OrderResult(
+                order.id,
+                request.symbol,
+                side,
+                request.quantity,
+                request.price,
+                "filled",
+                "가상 주문 처리 완료",
+                order.created_at,
+            )
 
-    def get_positions(self, current_prices: dict[str, float] | None = None) -> list[dict[str, float | int | str | None]]:
+    def get_positions(
+        self, current_prices: dict[str, float] | None = None
+    ) -> list[dict[str, float | int | str | None]]:
         current_prices = current_prices or {}
         with get_session() as session:
-            positions = session.execute(select(VirtualPosition).where(VirtualPosition.is_open.is_(True))).scalars().all()
+            positions = (
+                session.execute(
+                    select(VirtualPosition).where(VirtualPosition.is_open.is_(True))
+                )
+                .scalars()
+                .all()
+            )
             rows: list[dict[str, float | int | str | None]] = []
             for p in positions:
                 price_key = f"{p.market}:{p.symbol}"
-                override_price = current_prices.get(price_key) or current_prices.get(p.symbol)
+                override_price = current_prices.get(price_key) or current_prices.get(
+                    p.symbol
+                )
                 quote_price, quote_error = self._get_quote_price(p.symbol, p.market)
-                current_price = override_price if override_price is not None else quote_price
-                market_value = p.quantity * current_price if current_price is not None else None
-                unrealized_pnl = (current_price - p.avg_price) * p.quantity if current_price is not None else None
-                unrealized_return = (current_price / p.avg_price - 1) * 100 if current_price is not None and p.avg_price else None
-                total_pnl = p.realized_pnl + unrealized_pnl if unrealized_pnl is not None else p.realized_pnl
+                current_price = (
+                    override_price if override_price is not None else quote_price
+                )
+                market_value = (
+                    p.quantity * current_price if current_price is not None else None
+                )
+                unrealized_pnl = (
+                    (current_price - p.avg_price) * p.quantity
+                    if current_price is not None
+                    else None
+                )
+                unrealized_return = (
+                    (current_price / p.avg_price - 1) * 100
+                    if current_price is not None and p.avg_price
+                    else None
+                )
+                total_pnl = (
+                    p.realized_pnl + unrealized_pnl
+                    if unrealized_pnl is not None
+                    else p.realized_pnl
+                )
                 rows.append(
                     {
                         "symbol": p.symbol,
                         "market": p.market,
                         "quantity": p.quantity,
                         "avg_price": round(p.avg_price, 2),
-                        "current_price": round(current_price, 2) if current_price is not None else None,
+                        "current_price": (
+                            round(current_price, 2)
+                            if current_price is not None
+                            else None
+                        ),
                         "quote_error": quote_error,
-                        "market_value": round(market_value, 2) if market_value is not None else None,
-                        "unrealized_pnl": round(unrealized_pnl, 2) if unrealized_pnl is not None else None,
-                        "unrealized_return": round(unrealized_return, 2) if unrealized_return is not None else None,
+                        "market_value": (
+                            round(market_value, 2) if market_value is not None else None
+                        ),
+                        "unrealized_pnl": (
+                            round(unrealized_pnl, 2)
+                            if unrealized_pnl is not None
+                            else None
+                        ),
+                        "unrealized_return": (
+                            round(unrealized_return, 2)
+                            if unrealized_return is not None
+                            else None
+                        ),
                         "realized_pnl": round(p.realized_pnl, 2),
                         "total_pnl": round(total_pnl, 2),
                     }
                 )
             return rows
 
-    def _apply_buy(self, session: Session, request: OrderRequest, position: VirtualPosition | None, market: str) -> None:
+    def _apply_buy(
+        self,
+        session: Session,
+        request: OrderRequest,
+        position: VirtualPosition | None,
+        market: str,
+    ) -> None:
         if position is None:
-            session.add(VirtualPosition(symbol=request.symbol, market=market, quantity=request.quantity, avg_price=request.price))
+            session.add(
+                VirtualPosition(
+                    symbol=request.symbol,
+                    market=market,
+                    quantity=request.quantity,
+                    avg_price=request.price,
+                )
+            )
             return
-        total_cost = position.quantity * position.avg_price + request.quantity * request.price
+        total_cost = (
+            position.quantity * position.avg_price + request.quantity * request.price
+        )
         position.quantity += request.quantity
         position.avg_price = total_cost / position.quantity
         position.updated_at = datetime.utcnow()
 
-    def _apply_sell(self, session: Session, request: OrderRequest, position: VirtualPosition | None, market: str) -> None:
+    def _apply_sell(
+        self,
+        session: Session,
+        request: OrderRequest,
+        position: VirtualPosition | None,
+        market: str,
+    ) -> None:
         if position is None:
             return
         realized = (request.price - position.avg_price) * request.quantity
@@ -135,7 +226,9 @@ class MockBroker(Broker):
             )
         )
 
-    def _record_rejected_order(self, session: Session, request: OrderRequest, side: str, message: str) -> OrderResult:
+    def _record_rejected_order(
+        self, session: Session, request: OrderRequest, side: str, message: str
+    ) -> OrderResult:
         order = VirtualOrder(
             symbol=request.symbol,
             market=request.market.upper(),
@@ -147,9 +240,20 @@ class MockBroker(Broker):
         )
         session.add(order)
         session.flush()
-        return OrderResult(order.id, request.symbol, side, request.quantity, request.price, "rejected", message, order.created_at)
+        return OrderResult(
+            order.id,
+            request.symbol,
+            side,
+            request.quantity,
+            request.price,
+            "rejected",
+            message,
+            order.created_at,
+        )
 
-    def _get_quote_price(self, symbol: str, market: str) -> tuple[float | None, str | None]:
+    def _get_quote_price(
+        self, symbol: str, market: str
+    ) -> tuple[float | None, str | None]:
         try:
             quote = self.data_provider.get_quote(symbol=symbol, market=market)
             return float(quote["price"]), None
@@ -158,7 +262,15 @@ class MockBroker(Broker):
 
     def _get_daily_realized_pnl(self, session: Session) -> float:
         seoul_now = datetime.now(ZoneInfo("Asia/Seoul"))
-        seoul_today_start = datetime.combine(seoul_now.date(), time.min, tzinfo=ZoneInfo("Asia/Seoul"))
+        seoul_today_start = datetime.combine(
+            seoul_now.date(), time.min, tzinfo=ZoneInfo("Asia/Seoul")
+        )
         utc_start = seoul_today_start.astimezone(timezone.utc).replace(tzinfo=None)
-        logs = session.execute(select(RealizedPnlLog).where(RealizedPnlLog.created_at >= utc_start)).scalars().all()
+        logs = (
+            session.execute(
+                select(RealizedPnlLog).where(RealizedPnlLog.created_at >= utc_start)
+            )
+            .scalars()
+            .all()
+        )
         return float(sum(log.realized_pnl for log in logs))

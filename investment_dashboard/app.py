@@ -35,23 +35,54 @@ def ensure_seed_watchlist() -> None:
             return
         session.add_all(
             [
-                WatchlistItem(symbol="005930", name="삼성전자", market="KR", sector="반도체", memo="대표 대형주"),
-                WatchlistItem(symbol="035420", name="NAVER", market="KR", sector="인터넷", memo="플랫폼"),
-                WatchlistItem(symbol="AAPL", name="Apple", market="US", sector="Technology", memo="미국 관심종목"),
-                WatchlistItem(symbol="NVDA", name="NVIDIA", market="US", sector="Semiconductor", memo="AI 반도체"),
+                WatchlistItem(
+                    symbol="005930",
+                    name="삼성전자",
+                    market="KR",
+                    sector="반도체",
+                    memo="대표 대형주",
+                ),
+                WatchlistItem(
+                    symbol="035420",
+                    name="NAVER",
+                    market="KR",
+                    sector="인터넷",
+                    memo="플랫폼",
+                ),
+                WatchlistItem(
+                    symbol="AAPL",
+                    name="Apple",
+                    market="US",
+                    sector="Technology",
+                    memo="미국 관심종목",
+                ),
+                WatchlistItem(
+                    symbol="NVDA",
+                    name="NVIDIA",
+                    market="US",
+                    sector="Semiconductor",
+                    memo="AI 반도체",
+                ),
             ]
         )
 
 
 def load_watchlist() -> list[WatchlistItem]:
     with get_session() as session:
-        return list(session.execute(select(WatchlistItem).order_by(WatchlistItem.symbol)).scalars().all())
+        return list(
+            session.execute(select(WatchlistItem).order_by(WatchlistItem.symbol))
+            .scalars()
+            .all()
+        )
 
 
 @st.cache_data(ttl=300)
 def load_scored_watchlist(items: list[tuple[str, str]]) -> pd.DataFrame:
     provider = MarketDataProvider()
-    frames = {symbol: provider.get_price_history(symbol, market, days=180) for symbol, market in items}
+    frames = {
+        symbol: provider.get_price_history(symbol, market, days=180)
+        for symbol, market in items
+    }
     scanned = StockScanner().scan(frames)
     disclosures = DartClient().search_disclosures(page_count=20)
     return ScoringEngine().score_dataframe(scanned, disclosures=disclosures)
@@ -77,7 +108,9 @@ def main() -> None:
     ensure_seed_watchlist()
 
     st.title("개인용 투자 대시보드")
-    st.caption("실제 주문 없이 데이터 조회, 스캐너, 공시, 백테스트, 모의매매만 수행하는 MVP입니다.")
+    st.caption(
+        "실제 주문 없이 데이터 조회, 스캐너, 공시, 백테스트, 모의매매만 수행하는 MVP입니다."
+    )
     render_data_warning()
 
     watchlist = load_watchlist()
@@ -93,22 +126,52 @@ def main() -> None:
             st.info("관심종목을 등록하면 점수가 표시됩니다.")
         else:
             st.dataframe(
-                scored[["symbol", "score", "change_rate", "volume_ratio", "rsi14", "rs_score", "near_high_rate"]],
+                scored[
+                    [
+                        "symbol",
+                        "score",
+                        "change_rate",
+                        "volume_ratio",
+                        "rsi14",
+                        "rs_score",
+                        "near_high_rate",
+                    ]
+                ],
                 use_container_width=True,
                 hide_index=True,
             )
-            fig = px.bar(scored.sort_values("score"), x="score", y="symbol", orientation="h", color="score", color_continuous_scale="Viridis")
+            fig = px.bar(
+                scored.sort_values("score"),
+                x="score",
+                y="symbol",
+                orientation="h",
+                color="score",
+                color_continuous_scale="Viridis",
+            )
             st.plotly_chart(fig, use_container_width=True)
 
     with right:
         st.subheader("핫종목")
         if not scored.empty:
             hot = scored.sort_values(["score", "volume_ratio"], ascending=False).head(5)
-            st.dataframe(hot[["symbol", "score", "volume_ratio", "rs_score"]], hide_index=True, use_container_width=True)
+            st.dataframe(
+                hot[["symbol", "score", "volume_ratio", "rs_score"]],
+                hide_index=True,
+                use_container_width=True,
+            )
         st.subheader("최근 공시")
         disclosures = DartClient().search_disclosures(page_count=5)
         st.dataframe(
-            disclosures[["corp_name", "stock_code", "report_nm", "disclosure_type", "risk_tag", "rcept_dt"]].head(5),
+            disclosures[
+                [
+                    "corp_name",
+                    "stock_code",
+                    "report_nm",
+                    "disclosure_type",
+                    "risk_tag",
+                    "rcept_dt",
+                ]
+            ].head(5),
             hide_index=True,
             use_container_width=True,
         )

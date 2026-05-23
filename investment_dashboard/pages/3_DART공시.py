@@ -20,20 +20,34 @@ def main() -> None:
     corp_code = col1.text_input("기업코드", placeholder="선택 입력")
     begin = col2.date_input("시작일", value=date.today() - timedelta(days=14))
     end = col3.date_input("종료일", value=date.today())
-    disclosures = client.search_disclosures(corp_code=corp_code or None, begin=begin.strftime("%Y%m%d"), end=end.strftime("%Y%m%d"))
+    disclosures = client.search_disclosures(
+        corp_code=corp_code or None,
+        begin=begin.strftime("%Y%m%d"),
+        end=end.strftime("%Y%m%d"),
+    )
     if "data_source" not in disclosures.columns:
         disclosures["data_source"] = "UNKNOWN"
     if "disclosure_type" not in disclosures.columns:
         disclosures["disclosure_type"] = "기타"
     if "risk_tag" not in disclosures.columns:
         disclosures["risk_tag"] = "중립"
-    if not disclosures.empty and "SAMPLE_FALLBACK" in set(disclosures["data_source"].astype(str)):
+    if not disclosures.empty and "SAMPLE_FALLBACK" in set(
+        disclosures["data_source"].astype(str)
+    ):
         st.warning("DART API 조회 실패, 샘플 공시 표시 중입니다.")
     if disclosures.empty:
         source = disclosures.attrs.get("data_source", "UNKNOWN")
         st.info(f"조회된 DART 공시가 없습니다. data_source={source}")
-    type_options = ["전체"] + sorted(disclosures["disclosure_type"].dropna().unique().tolist()) if not disclosures.empty else ["전체"]
-    tag_options = ["전체"] + sorted(disclosures["risk_tag"].dropna().unique().tolist()) if not disclosures.empty else ["전체"]
+    type_options = (
+        ["전체"] + sorted(disclosures["disclosure_type"].dropna().unique().tolist())
+        if not disclosures.empty
+        else ["전체"]
+    )
+    tag_options = (
+        ["전체"] + sorted(disclosures["risk_tag"].dropna().unique().tolist())
+        if not disclosures.empty
+        else ["전체"]
+    )
     type_filter = st.selectbox("공시 유형 필터", type_options)
     tag_filter = st.selectbox("태그 필터", tag_options)
     view = disclosures.copy()

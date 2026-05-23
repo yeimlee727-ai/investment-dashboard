@@ -11,17 +11,41 @@ import requests
 
 from src.config import settings
 
-
 SAMPLE_DISCLOSURES = [
-    {"corp_name": "삼성전자", "stock_code": "005930", "report_nm": "분기보고서 샘플", "rcept_dt": "20260520", "url": ""},
-    {"corp_name": "NAVER", "stock_code": "035420", "report_nm": "단일판매ㆍ공급계약체결 샘플", "rcept_dt": "20260519", "url": ""},
-    {"corp_name": "카카오", "stock_code": "035720", "report_nm": "감사보고서 제출 지연 및 계속기업 불확실성 샘플", "rcept_dt": "20260518", "url": ""},
+    {
+        "corp_name": "삼성전자",
+        "stock_code": "005930",
+        "report_nm": "분기보고서 샘플",
+        "rcept_dt": "20260520",
+        "url": "",
+    },
+    {
+        "corp_name": "NAVER",
+        "stock_code": "035420",
+        "report_nm": "단일판매ㆍ공급계약체결 샘플",
+        "rcept_dt": "20260519",
+        "url": "",
+    },
+    {
+        "corp_name": "카카오",
+        "stock_code": "035720",
+        "report_nm": "감사보고서 제출 지연 및 계속기업 불확실성 샘플",
+        "rcept_dt": "20260518",
+        "url": "",
+    },
 ]
 
 
 def classify_disclosure(report_name: str) -> tuple[str, str]:
     name = report_name.replace(" ", "")
-    danger_keywords = ["의견거절", "한정", "부적정", "계속기업불확실성", "상장폐지", "거래정지"]
+    danger_keywords = [
+        "의견거절",
+        "한정",
+        "부적정",
+        "계속기업불확실성",
+        "상장폐지",
+        "거래정지",
+    ]
     if any(keyword in name for keyword in danger_keywords):
         if "감사" in name or "의견" in name:
             return "감사의견", "위험"
@@ -34,7 +58,18 @@ def classify_disclosure(report_name: str) -> tuple[str, str]:
         (["최대주주변경", "최대주주 변경"], "최대주주변경", "주의"),
         (["소송", "분쟁", "청구"], "소송", "위험"),
         (["감사의견", "감사보고서"], "감사의견", "중립"),
-        (["잠정실적", "매출액", "영업이익", "분기보고서", "반기보고서", "사업보고서"], "실적공시", "중립"),
+        (
+            [
+                "잠정실적",
+                "매출액",
+                "영업이익",
+                "분기보고서",
+                "반기보고서",
+                "사업보고서",
+            ],
+            "실적공시",
+            "중립",
+        ),
     ]
     for keywords, disclosure_type, sentiment in rules:
         if any(keyword in name for keyword in keywords):
@@ -83,7 +118,9 @@ class DartClient:
         page_count: int = 20,
     ) -> pd.DataFrame:
         if not self.api_key:
-            return enrich_disclosures(pd.DataFrame(SAMPLE_DISCLOSURES), "SAMPLE_NO_API_KEY")
+            return enrich_disclosures(
+                pd.DataFrame(SAMPLE_DISCLOSURES), "SAMPLE_NO_API_KEY"
+            )
         begin = begin or (date.today() - timedelta(days=14)).strftime("%Y%m%d")
         end = end or date.today().strftime("%Y%m%d")
         params = {
@@ -95,7 +132,9 @@ class DartClient:
         if corp_code:
             params["corp_code"] = corp_code
         try:
-            response = requests.get(f"{self.base_url}/list.json", params=params, timeout=self.timeout)
+            response = requests.get(
+                f"{self.base_url}/list.json", params=params, timeout=self.timeout
+            )
             response.raise_for_status()
             payload = response.json()
             if payload.get("status") not in {"000", "013"}:
@@ -103,23 +142,41 @@ class DartClient:
             rows = payload.get("list", [])
             for row in rows:
                 receipt = row.get("rcept_no", "")
-                row["url"] = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}" if receipt else ""
+                row["url"] = (
+                    f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}"
+                    if receipt
+                    else ""
+                )
             if rows:
                 return enrich_disclosures(pd.DataFrame(rows), "DART_API")
             return enrich_disclosures(pd.DataFrame(), "DART_API_NO_DATA")
         except Exception:
-            return enrich_disclosures(pd.DataFrame(SAMPLE_DISCLOSURES), "SAMPLE_FALLBACK")
+            return enrich_disclosures(
+                pd.DataFrame(SAMPLE_DISCLOSURES), "SAMPLE_FALLBACK"
+            )
 
     def fetch_corp_codes(self) -> pd.DataFrame:
         if not self.api_key:
             return pd.DataFrame(
                 [
-                    {"corp_code": "00126380", "corp_name": "삼성전자", "stock_code": "005930"},
-                    {"corp_code": "00266961", "corp_name": "NAVER", "stock_code": "035420"},
+                    {
+                        "corp_code": "00126380",
+                        "corp_name": "삼성전자",
+                        "stock_code": "005930",
+                    },
+                    {
+                        "corp_code": "00266961",
+                        "corp_name": "NAVER",
+                        "stock_code": "035420",
+                    },
                 ]
             )
         try:
-            response = requests.get(f"{self.base_url}/corpCode.xml", params={"crtfc_key": self.api_key}, timeout=self.timeout)
+            response = requests.get(
+                f"{self.base_url}/corpCode.xml",
+                params={"crtfc_key": self.api_key},
+                timeout=self.timeout,
+            )
             response.raise_for_status()
             with zipfile.ZipFile(io.BytesIO(response.content)) as zipped:
                 xml_bytes = zipped.read(zipped.namelist()[0])
