@@ -44,6 +44,12 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+개발/테스트 도구까지 설치하려면 아래 명령을 사용합니다.
+
+```powershell
+pip install -r requirements-dev.txt
+```
+
 ### Windows CMD
 
 ```cmd
@@ -53,6 +59,12 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
+개발/테스트 도구까지 설치하려면 아래 명령을 사용합니다.
+
+```cmd
+pip install -r requirements-dev.txt
+```
+
 ### macOS/Linux
 
 ```bash
@@ -60,6 +72,12 @@ cd investment_dashboard
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+개발/테스트 도구까지 설치하려면 아래 명령을 사용합니다.
+
+```bash
+pip install -r requirements-dev.txt
 ```
 
 ## 환경 변수
@@ -106,16 +124,38 @@ db/investment_dashboard.sqlite3
 
 파일을 삭제한 뒤 `streamlit run app.py`를 다시 실행하면 SQLite DB가 현재 모델 기준으로 재생성됩니다.
 
+## 테스트와 품질 검증
+
+외부 API나 실제 증권사 연결 없이 샘플/fake/mock 데이터만 사용해 테스트합니다.
+
+```bash
+python -m compileall .
+python scripts/verify_compile.py
+pytest
+ruff check .
+black --check .
+```
+
+주요 테스트 범위는 다음과 같습니다.
+
+- `MockBroker` 가상 매수/매도, rejected 처리, KR/US 가격 조회, 실현손익 로그
+- `RiskEngine` 주문 한도, 종목 한도, 일 손실 한도, 중복 진입, 비상정지
+- `BacktestEngine` 다음 봉 시가 진입, 마지막 봉 진입 방지, 수수료/슬리피지, 포지션 비중, 손절/익절 판정
+- 기술지표 RSI/EMA/MACD/ATR/거래량 이동평균
+- 스캐너/점수화/DART 공시 분류
+
 ## 프로젝트 구조
 
 ```text
 investment_dashboard/
 ├─ app.py
 ├─ requirements.txt
+├─ requirements-dev.txt
 ├─ README.md
 ├─ .env.example
 ├─ data/
 ├─ db/
+├─ scripts/
 ├─ src/
 │  ├─ config.py
 │  ├─ database.py
@@ -129,6 +169,7 @@ investment_dashboard/
 │  ├─ broker/
 │  └─ risk/
 └─ pages/
+└─ tests/
 ```
 
 ## 중요한 제한 사항
@@ -146,6 +187,7 @@ investment_dashboard/
 
 - `.venv/`
 - `__pycache__/`
+- `.pytest_cache/`
 - `*.pyc`, `*.pyo`, `*.pyd`
 - `*.log`
 - `db/*.sqlite3`, `db/*.sqlite`

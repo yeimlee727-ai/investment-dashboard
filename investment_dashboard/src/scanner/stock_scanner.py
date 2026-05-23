@@ -10,11 +10,14 @@ class StockScanner:
         rows: list[dict[str, float | str | bool]] = []
         returns_60d: dict[str, float] = {}
 
-        enriched_frames = {
-            symbol: add_technical_indicators(df)
-            for symbol, df in price_frames.items()
-            if not df.empty
-        }
+        symbol_meta: dict[str, str] = {}
+        enriched_frames = {}
+        for key, df in price_frames.items():
+            if df.empty:
+                continue
+            symbol, market = self._parse_key(key)
+            symbol_meta[symbol] = market
+            enriched_frames[symbol] = add_technical_indicators(df)
         for symbol, df in enriched_frames.items():
             returns_60d[symbol] = float(df.iloc[-1]["return_60d"])
 
@@ -38,8 +41,14 @@ class StockScanner:
             rows.append(
                 {
                     "symbol": symbol,
+                    "market": symbol_meta.get(symbol, "KR"),
                     "close": float(latest["close"]),
                     "change_rate": (
+                        float((latest["close"] / prev["close"] - 1) * 100)
+                        if prev["close"]
+                        else 0.0
+                    ),
+                    "change_pct": (
                         float((latest["close"] / prev["close"] - 1) * 100)
                         if prev["close"]
                         else 0.0
@@ -50,6 +59,7 @@ class StockScanner:
                     ),
                     "volume_ratio": float(volume_ratio),
                     "rsi14": float(latest["rsi14"]),
+                    "rsi": float(latest["rsi14"]),
                     "ema20": float(latest["ema20"]),
                     "ema60": float(latest["ema60"]),
                     "macd": float(latest["macd"]),
@@ -71,12 +81,15 @@ class StockScanner:
             return pd.DataFrame(
                 columns=[
                     "symbol",
+                    "market",
                     "close",
                     "change_rate",
+                    "change_pct",
                     "volume",
                     "trading_value",
                     "volume_ratio",
                     "rsi14",
+                    "rsi",
                     "ema20",
                     "ema60",
                     "macd",
@@ -97,3 +110,9 @@ class StockScanner:
         return pd.DataFrame(rows).sort_values(
             ["rs_score", "volume_ratio"], ascending=False
         )
+
+    def _parse_key(self, key: str) -> tuple[str, str]:
+        if ":" not in key:
+            return key, "KR"
+        market, symbol = key.split(":", 1)
+        return symbol, market.upper()
