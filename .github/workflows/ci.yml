@@ -10,6 +10,8 @@ jobs:
     defaults:
       run:
         working-directory: investment_dashboard
+    env:
+      PYTHONPATH: ${{ github.workspace }}/investment_dashboard
 
     steps:
       - name: Checkout repository
@@ -29,7 +31,7 @@ jobs:
         run: python -m compileall .
 
       - name: Run tests
-        run: pytest
+        run: python -m pytest -vv
 
       - name: Run Ruff
         run: ruff check .
