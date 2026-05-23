@@ -1,8 +1,8 @@
 ---
 name: Feature request
-about: 기능 개발 작업을 안전하게 정의합니다.
+about: Propose a scoped feature for the investment dashboard
 title: "[Feature] "
-labels: enhancement
+labels: ["type:feature", "status:needs-triage"]
 assignees: ""
 ---
 
@@ -53,4 +53,3 @@ black --check .
 
 
 ## 참고 사항
-

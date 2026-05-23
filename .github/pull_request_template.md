@@ -13,8 +13,24 @@
 ## 관련 Issue
 
 
+## 관련 labels
+
+
+## 관련 Agent 역할
+
+- [ ] Data Provider
+- [ ] DART / Scoring
+- [ ] Backtest
+- [ ] UI
+- [ ] Tests / CI / Docs
+
 ## 변경 파일 목록
 
+
+## 공통 파일 수정 여부
+
+- [ ] 공통 파일을 수정하지 않았습니다.
+- [ ] 공통 파일을 수정했으며 `AGENTS.md`의 공유 파일 수정 규칙을 확인했습니다.
 
 ## 테스트 결과
 
@@ -37,6 +53,12 @@ black --check .
 
 ## 남은 제한사항
 
+
+## branch protection 확인
+
+- [ ] main 브랜치는 direct push 대신 PR 기반 merge를 사용합니다.
+- [ ] required status checks가 설정되어 있거나, 설정 필요 여부를 확인했습니다.
+- [ ] CI required checks 통과 전 merge하지 않습니다.
 
 ## 안전성 체크
 
@@ -61,4 +83,3 @@ black --check .
 - [ ] SAMPLE 모드에서 정상 동작합니다.
 - [ ] REAL_WITH_FALLBACK 모드에서 실패 시 샘플 fallback이 동작합니다.
 - [ ] SAMPLE / FALLBACK / REAL DATA 표시가 명확합니다.
-

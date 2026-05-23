@@ -1,8 +1,8 @@
 ---
 name: Test / quality task
-about: 테스트, CI, 포맷, 문서 품질 개선 작업을 정의합니다.
+about: Improve tests, CI, linting, formatting, or quality checks
 title: "[Quality] "
-labels: quality
+labels: ["type:quality", "area:tests", "status:needs-triage"]
 assignees: ""
 ---
 
@@ -38,4 +38,3 @@ black --check .
 - [ ] SAMPLE 데이터 또는 mock 데이터만 사용합니다.
 - [ ] ruff check . 통과
 - [ ] black --check . 통과
-
