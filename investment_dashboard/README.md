@@ -132,12 +132,12 @@ db/investment_dashboard.sqlite3
 pip install -r requirements-dev.txt
 python -m compileall .
 python scripts/verify_compile.py
-pytest
+python -m pytest -vv
 ruff check .
 black --check .
 ```
 
-GitHub Actions CI도 같은 품질 검증을 수행합니다. `main` 브랜치에 push하거나 pull request를 열면 자동으로 Python 3.11 환경에서 의존성을 설치하고 `compileall`, `pytest`, `ruff`, `black --check`를 실행합니다.
+GitHub Actions CI도 같은 품질 검증을 수행합니다. `main` 브랜치에 push하거나 pull request를 열면 자동으로 Python 3.11 환경에서 의존성을 설치하고 `compileall`, `python -m pytest -vv`, `ruff`, `black --check`를 실행합니다.
 
 주요 테스트 범위는 다음과 같습니다.
 
