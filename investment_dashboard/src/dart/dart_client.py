@@ -15,12 +15,17 @@ from src.config import settings
 SAMPLE_DISCLOSURES = [
     {"corp_name": "삼성전자", "stock_code": "005930", "report_nm": "분기보고서 샘플", "rcept_dt": "20260520", "url": ""},
     {"corp_name": "NAVER", "stock_code": "035420", "report_nm": "단일판매ㆍ공급계약체결 샘플", "rcept_dt": "20260519", "url": ""},
-    {"corp_name": "카카오", "stock_code": "035720", "report_nm": "전환사채권발행결정 샘플", "rcept_dt": "20260518", "url": ""},
+    {"corp_name": "카카오", "stock_code": "035720", "report_nm": "감사보고서 제출 지연 및 계속기업 불확실성 샘플", "rcept_dt": "20260518", "url": ""},
 ]
 
 
 def classify_disclosure(report_name: str) -> tuple[str, str]:
     name = report_name.replace(" ", "")
+    danger_keywords = ["의견거절", "한정", "부적정", "계속기업불확실성", "상장폐지", "거래정지"]
+    if any(keyword in name for keyword in danger_keywords):
+        if "감사" in name or "의견" in name:
+            return "감사의견", "위험"
+        return "기타", "위험"
     rules: list[tuple[list[str], str, str]] = [
         (["공급계약", "단일판매", "판매공급계약"], "공급계약", "긍정"),
         (["유상증자"], "유상증자", "주의"),
@@ -28,7 +33,7 @@ def classify_disclosure(report_name: str) -> tuple[str, str]:
         (["자기주식", "자사주"], "자기주식", "긍정"),
         (["최대주주변경", "최대주주 변경"], "최대주주변경", "주의"),
         (["소송", "분쟁", "청구"], "소송", "위험"),
-        (["감사의견", "감사보고서", "의견거절", "한정"], "감사의견", "위험"),
+        (["감사의견", "감사보고서"], "감사의견", "중립"),
         (["잠정실적", "매출액", "영업이익", "분기보고서", "반기보고서", "사업보고서"], "실적공시", "중립"),
     ]
     for keywords, disclosure_type, sentiment in rules:
@@ -37,13 +42,14 @@ def classify_disclosure(report_name: str) -> tuple[str, str]:
     return "기타", "중립"
 
 
-def enrich_disclosures(df: pd.DataFrame) -> pd.DataFrame:
+def enrich_disclosures(df: pd.DataFrame, data_source: str) -> pd.DataFrame:
     if df.empty:
         return df
     enriched = df.copy()
     classifications = enriched["report_nm"].fillna("").map(classify_disclosure)
     enriched["disclosure_type"] = classifications.map(lambda item: item[0])
     enriched["risk_tag"] = classifications.map(lambda item: item[1])
+    enriched["data_source"] = data_source
     return enriched
 
 
@@ -64,7 +70,7 @@ class DartClient:
         page_count: int = 20,
     ) -> pd.DataFrame:
         if not self.api_key:
-            return enrich_disclosures(pd.DataFrame(SAMPLE_DISCLOSURES))
+            return enrich_disclosures(pd.DataFrame(SAMPLE_DISCLOSURES), "SAMPLE_NO_API_KEY")
         begin = begin or (date.today() - timedelta(days=14)).strftime("%Y%m%d")
         end = end or date.today().strftime("%Y%m%d")
         params = {
@@ -85,9 +91,11 @@ class DartClient:
             for row in rows:
                 receipt = row.get("rcept_no", "")
                 row["url"] = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}" if receipt else ""
-            return enrich_disclosures(pd.DataFrame(rows) if rows else pd.DataFrame(SAMPLE_DISCLOSURES))
+            if rows:
+                return enrich_disclosures(pd.DataFrame(rows), "DART_API")
+            return enrich_disclosures(pd.DataFrame(SAMPLE_DISCLOSURES), "SAMPLE_FALLBACK")
         except Exception:
-            return enrich_disclosures(pd.DataFrame(SAMPLE_DISCLOSURES))
+            return enrich_disclosures(pd.DataFrame(SAMPLE_DISCLOSURES), "SAMPLE_FALLBACK")
 
     def fetch_corp_codes(self) -> pd.DataFrame:
         if not self.api_key:

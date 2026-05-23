@@ -11,6 +11,7 @@ class OrderRequest:
     side: str
     quantity: int
     price: float
+    market: str = "KR"
     reason: str = ""
 
 

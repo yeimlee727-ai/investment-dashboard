@@ -40,6 +40,7 @@ class VirtualOrder(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     symbol: Mapped[str] = mapped_column(String(32), index=True)
+    market: Mapped[str] = mapped_column(String(20), default="KR")
     side: Mapped[str] = mapped_column(String(10))
     quantity: Mapped[int] = mapped_column(Integer)
     price: Mapped[float] = mapped_column(Float)
@@ -52,9 +53,23 @@ class VirtualPosition(Base):
     __tablename__ = "virtual_positions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    symbol: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    market: Mapped[str] = mapped_column(String(20), default="KR", index=True)
     quantity: Mapped[int] = mapped_column(Integer)
     avg_price: Mapped[float] = mapped_column(Float)
     realized_pnl: Mapped[float] = mapped_column(Float, default=0.0)
     is_open: Mapped[bool] = mapped_column(Boolean, default=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class RealizedPnlLog(Base):
+    __tablename__ = "realized_pnl_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    market: Mapped[str] = mapped_column(String(20), default="KR", index=True)
+    quantity: Mapped[int] = mapped_column(Integer)
+    entry_price: Mapped[float] = mapped_column(Float)
+    exit_price: Mapped[float] = mapped_column(Float)
+    realized_pnl: Mapped[float] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

@@ -1,0 +1,15 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.log
+db/*.sqlite3
+db/*.sqlite
+.streamlit/secrets.toml
+investment_dashboard/.env
+investment_dashboard/.venv/
+investment_dashboard/db/*.sqlite3
+investment_dashboard/db/*.sqlite
+investment_dashboard/.streamlit/secrets.toml

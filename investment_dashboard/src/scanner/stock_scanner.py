@@ -26,6 +26,7 @@ class StockScanner:
         for symbol, df in enriched_frames.items():
             latest = df.iloc[-1]
             prev = df.iloc[-2] if len(df) > 1 else latest
+            high_reference_name = "52w_high" if "52w_high" in df.columns else "period_high"
             volume_ratio = latest["volume"] / latest["volume_ma20"] if latest["volume_ma20"] else 0
             ema_breakout = prev["close"] <= prev["ema20"] and latest["close"] > latest["ema20"]
             rows.append(
@@ -43,6 +44,8 @@ class StockScanner:
                     "macd_hist": float(latest["macd_hist"]),
                     "return_20d": float(latest["return_20d"]),
                     "return_60d": float(latest["return_60d"]),
+                    "high_reference_name": high_reference_name,
+                    "reference_high": float(latest["reference_high"]),
                     "ema_breakout": bool(ema_breakout),
                     "near_high_rate": float(latest["near_high_rate"]),
                     "rs_score": float(rank.get(symbol, 50.0)),
@@ -68,6 +71,8 @@ class StockScanner:
                     "macd_hist",
                     "return_20d",
                     "return_60d",
+                    "high_reference_name",
+                    "reference_high",
                     "ema_breakout",
                     "near_high_rate",
                     "rs_score",

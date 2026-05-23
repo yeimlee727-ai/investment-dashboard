@@ -29,11 +29,23 @@ def main() -> None:
     initial_cash = st.number_input("초기자금", min_value=100_000, value=10_000_000, step=100_000)
     fee_rate = st.number_input("수수료율", min_value=0.0, max_value=0.01, value=0.00015, step=0.00005, format="%.5f")
     slippage_rate = st.number_input("슬리피지율", min_value=0.0, max_value=0.02, value=0.0005, step=0.0001, format="%.5f")
+    position_size_pct = st.slider("1회 진입 비중", min_value=0.05, max_value=1.0, value=0.2, step=0.05)
+    stop_take_basis_label = st.radio("손절/익절 판정 기준", ["종가 기준 백테스트", "장중 터치 기준 백테스트"], horizontal=True)
+    stop_take_basis = "intraday" if stop_take_basis_label == "장중 터치 기준 백테스트" else "close"
 
     if st.button("실행"):
         try:
             df = load_input_data(symbol, market, uploaded)
-            result = BacktestEngine().run(df, strategy=strategy, initial_cash=float(initial_cash), fee_rate=float(fee_rate), slippage_rate=float(slippage_rate))
+            result = BacktestEngine().run(
+                df,
+                strategy=strategy,
+                initial_cash=float(initial_cash),
+                fee_rate=float(fee_rate),
+                slippage_rate=float(slippage_rate),
+                position_size_pct=float(position_size_pct),
+                stop_take_basis=stop_take_basis,
+            )
+            st.info(result.mode_label)
             c1, c2, c3, c4, c5, c6 = st.columns(6)
             c1.metric("총수익률", f"{result.total_return:.2f}%")
             c2.metric("승률", f"{result.win_rate:.2f}%")

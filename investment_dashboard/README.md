@@ -104,8 +104,19 @@ investment_dashboard/
 - `.venv/`
 - `__pycache__/`
 - `*.pyc`, `*.pyo`, `*.pyd`
+- `*.log`
 - `db/*.sqlite3`, `db/*.sqlite`
 - `.env`
+- `.streamlit/secrets.toml`
+
+## 절대 업로드하면 안 되는 파일
+
+- 실제 API 키가 들어 있는 `.env`
+- Streamlit 비밀값 파일 `.streamlit/secrets.toml`
+- 개인 로컬 가상환경 `.venv/`
+- 로컬 SQLite DB 파일 `db/*.sqlite3`, `db/*.sqlite`
+- 실행 로그나 개인 경로가 포함된 `*.log`
+- 증권사 API 토큰, 계좌번호, 개인 인증정보가 들어간 모든 파일
 
 ## 향후 Toss API 연결 위치
 

@@ -53,7 +53,8 @@ def load_scored_watchlist(items: list[tuple[str, str]]) -> pd.DataFrame:
     provider = MarketDataProvider()
     frames = {symbol: provider.get_price_history(symbol, market, days=180) for symbol, market in items}
     scanned = StockScanner().scan(frames)
-    return ScoringEngine().score_dataframe(scanned)
+    disclosures = DartClient().search_disclosures(page_count=20)
+    return ScoringEngine().score_dataframe(scanned, disclosures=disclosures)
 
 
 def render_market_summary(scored: pd.DataFrame) -> None:

@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from src.database import get_session, init_db
 from src.data_providers.market_data_provider import MarketDataProvider
+from src.dart.dart_client import DartClient
 from src.models import WatchlistItem
 from src.scanner.stock_scanner import StockScanner
 from src.scoring.scoring_engine import ScoringEngine
@@ -31,7 +32,8 @@ def main() -> None:
         return
     frames = {symbol: provider.get_price_history(symbol, market, 180) for symbol, market in pairs}
     scanned = StockScanner().scan(frames)
-    scored = ScoringEngine().score_dataframe(scanned)
+    disclosures = DartClient().search_disclosures(page_count=20)
+    scored = ScoringEngine().score_dataframe(scanned, disclosures=disclosures)
 
     filters = st.multiselect(
         "조건 필터",
