@@ -2,4 +2,5 @@
 requirements.txt text eol=lf
 requirements-dev.txt text eol=lf
 .gitignore text eol=lf
+.gitattributes text eol=lf
 *.md text eol=lf
