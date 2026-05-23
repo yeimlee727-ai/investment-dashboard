@@ -29,6 +29,9 @@ def main() -> None:
         disclosures["risk_tag"] = "중립"
     if not disclosures.empty and "SAMPLE_FALLBACK" in set(disclosures["data_source"].astype(str)):
         st.warning("DART API 조회 실패, 샘플 공시 표시 중입니다.")
+    if disclosures.empty:
+        source = disclosures.attrs.get("data_source", "UNKNOWN")
+        st.info(f"조회된 DART 공시가 없습니다. data_source={source}")
     type_options = ["전체"] + sorted(disclosures["disclosure_type"].dropna().unique().tolist()) if not disclosures.empty else ["전체"]
     tag_options = ["전체"] + sorted(disclosures["risk_tag"].dropna().unique().tolist()) if not disclosures.empty else ["전체"]
     type_filter = st.selectbox("공시 유형 필터", type_options)

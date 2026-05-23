@@ -44,7 +44,20 @@ def classify_disclosure(report_name: str) -> tuple[str, str]:
 
 def enrich_disclosures(df: pd.DataFrame, data_source: str) -> pd.DataFrame:
     if df.empty:
-        return df
+        empty = pd.DataFrame(
+            columns=[
+                "corp_name",
+                "stock_code",
+                "report_nm",
+                "rcept_dt",
+                "url",
+                "disclosure_type",
+                "risk_tag",
+                "data_source",
+            ]
+        )
+        empty.attrs["data_source"] = data_source
+        return empty
     enriched = df.copy()
     classifications = enriched["report_nm"].fillna("").map(classify_disclosure)
     enriched["disclosure_type"] = classifications.map(lambda item: item[0])
@@ -93,7 +106,7 @@ class DartClient:
                 row["url"] = f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={receipt}" if receipt else ""
             if rows:
                 return enrich_disclosures(pd.DataFrame(rows), "DART_API")
-            return enrich_disclosures(pd.DataFrame(SAMPLE_DISCLOSURES), "SAMPLE_FALLBACK")
+            return enrich_disclosures(pd.DataFrame(), "DART_API_NO_DATA")
         except Exception:
             return enrich_disclosures(pd.DataFrame(SAMPLE_DISCLOSURES), "SAMPLE_FALLBACK")
 

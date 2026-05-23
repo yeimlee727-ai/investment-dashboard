@@ -53,7 +53,8 @@ class BacktestEngine:
 
         for i in range(61, len(data)):
             row = data.iloc[i]
-            if not in_position and i > 61 and self._entry_signal(data, i - 1, strategy):
+            is_last_bar = i == len(data) - 1
+            if not in_position and not is_last_bar and i > 61 and self._entry_signal(data, i - 1, strategy):
                 equity_before_entry = cash
                 entry_budget = equity_before_entry * position_size_pct
                 if entry_budget <= 0:
@@ -69,30 +70,6 @@ class BacktestEngine:
                 entry_fee = entry_cost * fee_rate
                 entry_slippage = (entry_price - entry_raw_price) * quantity
                 cash -= entry_cost + entry_fee
-                if i == len(data) - 1:
-                    raw_exit_price = self._exit_raw_price(row, entry_price, use_intraday_touch, force_close=True)
-                    exit_price = raw_exit_price * (1 - slippage_rate)
-                    exit_value = quantity * exit_price
-                    exit_fee = exit_value * fee_rate
-                    exit_slippage = (raw_exit_price - exit_price) * quantity
-                    cash += exit_value - exit_fee
-                    pnl = exit_value - exit_fee - entry_cost - entry_fee
-                    profit_rate = (pnl / (entry_cost + entry_fee) * 100) if entry_cost else 0.0
-                    trades.append(
-                        {
-                            "entry_date": entry_date,
-                            "exit_date": str(row["date"]),
-                            "entry_price": entry_price,
-                            "exit_price": exit_price,
-                            "profit_rate": profit_rate,
-                            "pnl": pnl,
-                            "holding_days": 0,
-                            "fee": entry_fee + exit_fee,
-                            "slippage_cost": entry_slippage + exit_slippage,
-                            "exit_reason": "마지막 종가 강제청산",
-                        }
-                    )
-                    in_position = False
             elif in_position:
                 stop_loss = self._stop_hit(row, entry_price, use_intraday_touch)
                 take_profit = self._take_profit_hit(row, entry_price, use_intraday_touch)

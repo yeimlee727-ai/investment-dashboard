@@ -32,6 +32,8 @@ def main() -> None:
     position_size_pct = st.slider("1회 진입 비중", min_value=0.05, max_value=1.0, value=0.2, step=0.05)
     stop_take_basis_label = st.radio("손절/익절 판정 기준", ["종가 기준 백테스트", "장중 터치 기준 백테스트"], horizontal=True)
     stop_take_basis = "intraday" if stop_take_basis_label == "장중 터치 기준 백테스트" else "close"
+    if stop_take_basis == "intraday":
+        st.caption("장중 터치 기준에서 손절과 익절이 같은 봉에 동시에 발생하면 손절을 우선 처리합니다.")
 
     if st.button("실행"):
         try:

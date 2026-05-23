@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, time
+from datetime import datetime, time, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,6 +24,12 @@ class MockBroker(Broker):
         side = request.side.upper()
         market = request.market.upper()
         with get_session() as session:
+            if request.quantity <= 0:
+                return self._record_rejected_order(session, request, side, "가상 수량은 0보다 커야 합니다.")
+            if request.price <= 0:
+                return self._record_rejected_order(session, request, side, "가상 가격은 0보다 커야 합니다.")
+            if market not in {"KR", "US"}:
+                return self._record_rejected_order(session, request, side, "시장구분은 KR 또는 US만 지원합니다.")
             if side not in {"BUY", "SELL"}:
                 return self._record_rejected_order(session, request, side, "지원하지 않는 가상 주문 구분입니다.")
 
@@ -76,7 +83,10 @@ class MockBroker(Broker):
             rows: list[dict[str, float | int | str]] = []
             for p in positions:
                 price_key = f"{p.market}:{p.symbol}"
-                current_price = current_prices.get(price_key) or current_prices.get(p.symbol) or self._get_quote_price(p.symbol, p.market)
+                quote_price, quote_status = self._get_quote_price(p.symbol, p.market)
+                current_price = current_prices.get(price_key) or current_prices.get(p.symbol) or quote_price
+                if current_price <= 0:
+                    quote_status = "현재가 조회 실패"
                 market_value = p.quantity * current_price
                 unrealized_pnl = (current_price - p.avg_price) * p.quantity
                 unrealized_return = (current_price / p.avg_price - 1) * 100 if p.avg_price else 0.0
@@ -88,6 +98,7 @@ class MockBroker(Broker):
                         "quantity": p.quantity,
                         "avg_price": round(p.avg_price, 2),
                         "current_price": round(current_price, 2),
+                        "price_status": quote_status,
                         "market_value": round(market_value, 2),
                         "unrealized_pnl": round(unrealized_pnl, 2),
                         "unrealized_return": round(unrealized_return, 2),
@@ -139,14 +150,16 @@ class MockBroker(Broker):
         session.flush()
         return OrderResult(order.id, request.symbol, side, request.quantity, request.price, "rejected", message, order.created_at)
 
-    def _get_quote_price(self, symbol: str, market: str) -> float:
+    def _get_quote_price(self, symbol: str, market: str) -> tuple[float, str]:
         try:
             quote = self.data_provider.get_quote(symbol=symbol, market=market)
-            return float(quote["price"])
+            return float(quote["price"]), "조회 성공"
         except Exception:
-            return 0.0
+            return 0.0, "현재가 조회 실패"
 
     def _get_daily_realized_pnl(self, session: Session) -> float:
-        today_start = datetime.combine(datetime.utcnow().date(), time.min)
-        logs = session.execute(select(RealizedPnlLog).where(RealizedPnlLog.created_at >= today_start)).scalars().all()
+        seoul_now = datetime.now(ZoneInfo("Asia/Seoul"))
+        seoul_today_start = datetime.combine(seoul_now.date(), time.min, tzinfo=ZoneInfo("Asia/Seoul"))
+        utc_start = seoul_today_start.astimezone(timezone.utc).replace(tzinfo=None)
+        logs = session.execute(select(RealizedPnlLog).where(RealizedPnlLog.created_at >= utc_start)).scalars().all()
         return float(sum(log.realized_pnl for log in logs))

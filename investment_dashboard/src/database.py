@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from collections.abc import Iterator
 
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from src.config import settings
@@ -21,7 +22,11 @@ def init_db() -> None:
     from src import models  # noqa: F401
 
     settings.base_dir.joinpath("db").mkdir(parents=True, exist_ok=True)
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except OperationalError as exc:
+        if "already exists" not in str(exc).lower():
+            raise
     _apply_lightweight_sqlite_migrations()
 
 
