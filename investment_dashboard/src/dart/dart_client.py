@@ -70,7 +70,7 @@ class DartClient:
         page_count: int = 20,
     ) -> pd.DataFrame:
         if not self.api_key:
-            return enrich_disclosures(pd.DataFrame(SAMPLE_DISCLOSURES), "SAMPLE_NO_API_KEY")
+            return enrich_disclosures(pd.DataFrame(SAMPLE_DISCLOSURES), "SAMPLE_NO_KEY")
         begin = begin or (date.today() - timedelta(days=14)).strftime("%Y%m%d")
         end = end or date.today().strftime("%Y%m%d")
         params = {

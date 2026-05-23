@@ -21,6 +21,12 @@ def main() -> None:
     begin = col2.date_input("시작일", value=date.today() - timedelta(days=14))
     end = col3.date_input("종료일", value=date.today())
     disclosures = client.search_disclosures(corp_code=corp_code or None, begin=begin.strftime("%Y%m%d"), end=end.strftime("%Y%m%d"))
+    if "data_source" not in disclosures.columns:
+        disclosures["data_source"] = "UNKNOWN"
+    if "disclosure_type" not in disclosures.columns:
+        disclosures["disclosure_type"] = "기타"
+    if "risk_tag" not in disclosures.columns:
+        disclosures["risk_tag"] = "중립"
     if not disclosures.empty and "SAMPLE_FALLBACK" in set(disclosures["data_source"].astype(str)):
         st.warning("DART API 조회 실패, 샘플 공시 표시 중입니다.")
     type_options = ["전체"] + sorted(disclosures["disclosure_type"].dropna().unique().tolist()) if not disclosures.empty else ["전체"]
