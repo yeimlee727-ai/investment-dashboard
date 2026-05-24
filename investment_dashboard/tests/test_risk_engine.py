@@ -45,3 +45,41 @@ def test_emergency_stop_blocks_all_orders() -> None:
     )
     assert not decision.allowed
     assert "비상정지" in decision.reason
+
+
+def test_daily_loss_usage_pct() -> None:
+    risk = RiskEngine(RiskConfig(daily_loss_limit=1000))
+    assert risk.daily_loss_usage_pct(-250) == 25
+    assert risk.daily_loss_usage_pct(100) == 0
+    assert risk.daily_loss_usage_pct(-2000) == 100
+
+
+def test_portfolio_risk_metrics() -> None:
+    positions = [
+        {
+            "market_value": 700,
+            "unrealized_pnl": 50,
+        },
+        {
+            "market_value": 300,
+            "unrealized_pnl": -20,
+        },
+        {
+            "market_value": None,
+            "unrealized_pnl": None,
+        },
+    ]
+
+    metrics = RiskEngine(RiskConfig(daily_loss_limit=100)).portfolio_risk_metrics(
+        positions,
+        current_daily_pnl=-25,
+    )
+
+    assert metrics["top1_weight"] == 70
+    assert metrics["top3_weight"] == 100
+    assert metrics["loss_position_count"] == 1
+    assert metrics["profit_position_count"] == 1
+    assert metrics["unrealized_loss_total"] == -20
+    assert metrics["unrealized_profit_total"] == 50
+    assert metrics["daily_realized_pnl"] == -25
+    assert metrics["daily_loss_usage_pct"] == 25

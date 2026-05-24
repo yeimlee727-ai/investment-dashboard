@@ -115,6 +115,7 @@ def test_market_specific_position_quotes_and_overrides(isolated_session) -> None
     assert by_symbol["005930"]["current_price"] == 70_000
     assert by_symbol["AAPL"]["current_price"] == 210
     assert by_symbol["AAPL"]["market_value"] == 420
+    assert by_symbol["AAPL"]["quote_error"] is None
 
 
 def test_quote_failure_returns_none_and_quote_error(isolated_session) -> None:
@@ -128,6 +129,85 @@ def test_quote_failure_returns_none_and_quote_error(isolated_session) -> None:
     assert positions[0]["current_price"] is None
     assert positions[0]["market_value"] is None
     assert str(positions[0]["quote_error"]).startswith("현재가 조회 실패")
+
+
+def test_position_profit_report_fields_are_calculated(isolated_session) -> None:
+    broker = make_broker(FakeProvider({("KR", "005930"): 1200}))
+    broker.place_order(
+        OrderRequest(symbol="005930", market="KR", side="BUY", quantity=10, price=1000)
+    )
+
+    position = broker.get_positions()[0]
+
+    assert position["cost_basis"] == 10_000
+    assert position["market_value"] == 12_000
+    assert position["unrealized_pnl"] == 2_000
+    assert position["unrealized_pnl_pct"] == 20
+    assert position["total_pnl"] == 2_000
+    assert position["total_pnl_pct"] == 20
+    assert position["position_weight"] == 100
+    assert position["updated_at"] is not None
+
+
+def test_portfolio_summary_excludes_quote_errors_from_market_value(
+    isolated_session,
+) -> None:
+    broker = make_broker(FakeProvider({("KR", "005930"): 1200}))
+    broker.place_order(
+        OrderRequest(symbol="005930", market="KR", side="BUY", quantity=10, price=1000)
+    )
+    broker.place_order(
+        OrderRequest(symbol="000660", market="KR", side="BUY", quantity=5, price=1000)
+    )
+
+    summary = broker.get_portfolio_summary()
+
+    assert summary["total_market_value"] == 12_000
+    assert summary["total_cost_basis"] == 15_000
+    assert summary["total_unrealized_pnl"] == 2_000
+    assert summary["quote_error_count"] == 1
+
+
+def test_order_and_realized_pnl_reports_include_required_columns(
+    isolated_session,
+) -> None:
+    broker = make_broker()
+    broker.place_order(
+        OrderRequest(symbol="005930", market="KR", side="BUY", quantity=10, price=1000)
+    )
+    broker.place_order(
+        OrderRequest(symbol="005930", market="KR", side="SELL", quantity=4, price=1200)
+    )
+
+    order_log = broker.get_order_logs()[0]
+    realized_log = broker.get_realized_pnl_logs()[0]
+
+    assert {
+        "created_at",
+        "market",
+        "symbol",
+        "side",
+        "quantity",
+        "price",
+        "status",
+        "reason",
+        "realized_pnl",
+        "error_message",
+    }.issubset(order_log)
+    assert order_log["realized_pnl"] == 800
+    assert {
+        "realized_at",
+        "market",
+        "symbol",
+        "quantity",
+        "entry_price",
+        "exit_price",
+        "realized_pnl",
+        "realized_pnl_pct",
+        "holding_days",
+        "reason",
+    }.issubset(realized_log)
+    assert realized_log["realized_pnl"] == 800
 
 
 def test_daily_realized_pnl_uses_asia_seoul_day_boundary(isolated_session) -> None:

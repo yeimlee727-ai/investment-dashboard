@@ -124,10 +124,15 @@ class MockBroker(Broker):
                 override_price = current_prices.get(price_key) or current_prices.get(
                     p.symbol
                 )
-                quote_price, quote_error = self._get_quote_price(p.symbol, p.market)
+                quote_price, quote_error = (
+                    (None, None)
+                    if override_price is not None
+                    else self._get_quote_price(p.symbol, p.market)
+                )
                 current_price = (
                     override_price if override_price is not None else quote_price
                 )
+                cost_basis = p.quantity * p.avg_price
                 market_value = (
                     p.quantity * current_price if current_price is not None else None
                 )
@@ -146,10 +151,15 @@ class MockBroker(Broker):
                     if unrealized_pnl is not None
                     else p.realized_pnl
                 )
+                total_pnl_pct = (
+                    total_pnl / cost_basis * 100
+                    if current_price is not None and cost_basis
+                    else None
+                )
                 rows.append(
                     {
-                        "symbol": p.symbol,
                         "market": p.market,
+                        "symbol": p.symbol,
                         "quantity": p.quantity,
                         "avg_price": round(p.avg_price, 2),
                         "current_price": (
@@ -161,9 +171,15 @@ class MockBroker(Broker):
                         "market_value": (
                             round(market_value, 2) if market_value is not None else None
                         ),
+                        "cost_basis": round(cost_basis, 2),
                         "unrealized_pnl": (
                             round(unrealized_pnl, 2)
                             if unrealized_pnl is not None
+                            else None
+                        ),
+                        "unrealized_pnl_pct": (
+                            round(unrealized_return, 2)
+                            if unrealized_return is not None
                             else None
                         ),
                         "unrealized_return": (
@@ -173,9 +189,147 @@ class MockBroker(Broker):
                         ),
                         "realized_pnl": round(p.realized_pnl, 2),
                         "total_pnl": round(total_pnl, 2),
+                        "total_pnl_pct": (
+                            round(total_pnl_pct, 2)
+                            if total_pnl_pct is not None
+                            else None
+                        ),
+                        "position_weight": None,
+                        "updated_at": p.updated_at,
+                    }
+                )
+            total_market_value = sum(
+                float(row["market_value"])
+                for row in rows
+                if row.get("market_value") is not None
+            )
+            for row in rows:
+                market_value = row.get("market_value")
+                row["position_weight"] = (
+                    round(float(market_value) / total_market_value * 100, 2)
+                    if market_value is not None and total_market_value
+                    else None
+                )
+            return rows
+
+    def get_portfolio_summary(
+        self, current_prices: dict[str, float] | None = None
+    ) -> dict[str, float | int | str | None]:
+        positions = self.get_positions(current_prices=current_prices)
+        valued_positions = [
+            position
+            for position in positions
+            if position.get("market_value") is not None
+            and position.get("unrealized_pnl") is not None
+        ]
+        total_market_value = sum(float(p["market_value"]) for p in valued_positions)
+        total_cost_basis = sum(float(p["cost_basis"]) for p in positions)
+        total_unrealized_pnl = sum(float(p["unrealized_pnl"]) for p in valued_positions)
+        total_realized_pnl = sum(float(p["realized_pnl"]) for p in positions)
+        total_pnl = total_unrealized_pnl + total_realized_pnl
+        max_loss = min(
+            valued_positions,
+            key=lambda item: float(item.get("total_pnl") or 0),
+            default=None,
+        )
+        max_profit = max(
+            valued_positions,
+            key=lambda item: float(item.get("total_pnl") or 0),
+            default=None,
+        )
+        return {
+            "total_market_value": round(total_market_value, 2),
+            "total_cost_basis": round(total_cost_basis, 2),
+            "total_unrealized_pnl": round(total_unrealized_pnl, 2),
+            "total_unrealized_pnl_pct": (
+                round(total_unrealized_pnl / total_cost_basis * 100, 2)
+                if total_cost_basis
+                else 0.0
+            ),
+            "total_realized_pnl": round(total_realized_pnl, 2),
+            "total_pnl": round(total_pnl, 2),
+            "position_count": len(positions),
+            "cash_balance": None,
+            "top1_weight": max(
+                [
+                    float(p["position_weight"])
+                    for p in positions
+                    if p["position_weight"]
+                ],
+                default=0.0,
+            ),
+            "max_loss_symbol": (
+                f"{max_loss['market']}:{max_loss['symbol']}" if max_loss else ""
+            ),
+            "max_profit_symbol": (
+                f"{max_profit['market']}:{max_profit['symbol']}" if max_profit else ""
+            ),
+            "quote_error_count": sum(1 for p in positions if p.get("quote_error")),
+        }
+
+    def get_order_logs(self) -> list[dict[str, float | int | str | datetime | None]]:
+        with get_session() as session:
+            orders = (
+                session.execute(
+                    select(VirtualOrder).order_by(VirtualOrder.created_at.desc())
+                )
+                .scalars()
+                .all()
+            )
+            realized_logs = session.execute(select(RealizedPnlLog)).scalars().all()
+            rows: list[dict[str, float | int | str | datetime | None]] = []
+            for order in orders:
+                realized_pnl = self._match_order_realized_pnl(order, realized_logs)
+                rows.append(
+                    {
+                        "created_at": order.created_at,
+                        "market": order.market,
+                        "symbol": order.symbol,
+                        "side": order.side,
+                        "quantity": order.quantity,
+                        "price": order.price,
+                        "status": order.status,
+                        "reason": order.reason,
+                        "realized_pnl": realized_pnl,
+                        "error_message": (
+                            order.reason if order.status == "rejected" else ""
+                        ),
                     }
                 )
             return rows
+
+    def get_realized_pnl_logs(
+        self,
+    ) -> list[dict[str, float | int | str | datetime | None]]:
+        with get_session() as session:
+            logs = (
+                session.execute(
+                    select(RealizedPnlLog).order_by(RealizedPnlLog.created_at.desc())
+                )
+                .scalars()
+                .all()
+            )
+            return [
+                {
+                    "realized_at": log.created_at,
+                    "market": log.market,
+                    "symbol": log.symbol,
+                    "quantity": log.quantity,
+                    "entry_price": log.entry_price,
+                    "avg_price": log.entry_price,
+                    "exit_price": log.exit_price,
+                    "realized_pnl": round(log.realized_pnl, 2),
+                    "realized_pnl_pct": (
+                        round((log.exit_price / log.entry_price - 1) * 100, 2)
+                        if log.entry_price
+                        else None
+                    ),
+                    "holding_days": None,
+                    "reason": "가상 매도 실현손익",
+                    "exit_reason": "가상 매도",
+                }
+                for log in logs
+            ]
 
     def _apply_buy(
         self,
@@ -284,3 +438,24 @@ class MockBroker(Broker):
             .all()
         )
         return float(sum(log.realized_pnl for log in logs))
+
+    def get_daily_realized_pnl(self) -> float:
+        with get_session() as session:
+            return self._get_daily_realized_pnl(session)
+
+    def _match_order_realized_pnl(
+        self, order: VirtualOrder, logs: list[RealizedPnlLog]
+    ) -> float | None:
+        if order.side != "SELL" or order.status != "filled":
+            return None
+        candidates = [
+            log
+            for log in logs
+            if log.symbol == order.symbol
+            and log.market == order.market
+            and log.quantity == order.quantity
+            and log.exit_price == order.price
+        ]
+        if not candidates:
+            return None
+        return round(candidates[-1].realized_pnl, 2)

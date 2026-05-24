@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -47,3 +48,54 @@ class RiskEngine:
         if current_daily_pnl <= -abs(self.config.daily_loss_limit):
             return RiskDecision(False, "일 손실 한도에 도달했습니다.")
         return RiskDecision(True, "허용")
+
+    def daily_loss_usage_pct(self, current_daily_pnl: float) -> float:
+        limit = abs(self.config.daily_loss_limit)
+        if limit <= 0:
+            return 100.0 if current_daily_pnl < 0 else 0.0
+        loss = max(0.0, -current_daily_pnl)
+        return min(100.0, round(loss / limit * 100, 2))
+
+    def portfolio_risk_metrics(
+        self,
+        positions: list[dict[str, Any]],
+        current_daily_pnl: float = 0.0,
+    ) -> dict[str, float | int]:
+        valued_positions = [
+            position
+            for position in positions
+            if position.get("market_value") is not None
+        ]
+        total_market_value = sum(
+            float(position["market_value"]) for position in valued_positions
+        )
+        weights = (
+            sorted(
+                [
+                    float(position["market_value"]) / total_market_value * 100
+                    for position in valued_positions
+                ],
+                reverse=True,
+            )
+            if total_market_value
+            else []
+        )
+        unrealized_values = [
+            float(position["unrealized_pnl"])
+            for position in positions
+            if position.get("unrealized_pnl") is not None
+        ]
+        return {
+            "top1_weight": round(weights[0], 2) if weights else 0.0,
+            "top3_weight": round(sum(weights[:3]), 2) if weights else 0.0,
+            "loss_position_count": sum(1 for value in unrealized_values if value < 0),
+            "profit_position_count": sum(1 for value in unrealized_values if value > 0),
+            "unrealized_loss_total": round(
+                sum(value for value in unrealized_values if value < 0), 2
+            ),
+            "unrealized_profit_total": round(
+                sum(value for value in unrealized_values if value > 0), 2
+            ),
+            "daily_realized_pnl": round(current_daily_pnl, 2),
+            "daily_loss_usage_pct": self.daily_loss_usage_pct(current_daily_pnl),
+        }
