@@ -236,7 +236,7 @@ def render_scanner_summary(scored: pd.DataFrame) -> None:
     st.dataframe(
         view[[col for col in columns if col in view.columns]],
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
     )
     fig = px.bar(
         view.sort_values("score"),
@@ -245,7 +245,7 @@ def render_scanner_summary(scored: pd.DataFrame) -> None:
         orientation="h",
         title="상위 종목 점수",
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
     st.caption("점수는 스캐너 요약 지표이며 매수/매도 추천이 아닙니다.")
 
 
@@ -284,7 +284,7 @@ def render_dart_summary(disclosures: pd.DataFrame) -> None:
             ]
         ],
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
     )
 
 
@@ -359,7 +359,7 @@ def render_navigation_guide() -> None:
     st.dataframe(
         pd.DataFrame(PAGE_GUIDE, columns=["페이지", "설명"]),
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
     )
 
 

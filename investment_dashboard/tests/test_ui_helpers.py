@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import importlib
 
-from src.ui_helpers import get_data_mode_status
+from src.ui_helpers import (
+    format_avg_profit_loss_ratio,
+    format_profit_factor,
+    get_backtest_warning_messages,
+    get_data_mode_status,
+)
 
 
 def test_data_mode_status_messages() -> None:
@@ -16,6 +21,23 @@ def test_data_mode_status_messages() -> None:
     assert real[2] == "info"
     assert fallback[0] == "FALLBACK MODE"
     assert fallback[2] == "warning"
+
+
+def test_backtest_low_trade_warning_message() -> None:
+    messages = get_backtest_warning_messages(
+        trade_count=3,
+        profit_factor=1.5,
+        avg_profit_loss_ratio=1.2,
+        data_source="SAMPLE",
+    )
+
+    assert any("통계적 신뢰도" in message for message in messages)
+    assert any("SAMPLE/FALLBACK" in message for message in messages)
+
+
+def test_profit_factor_no_loss_display() -> None:
+    assert format_profit_factor(999.0) == "999+ (손실 거래 없음)"
+    assert format_avg_profit_loss_ratio(0.0, 999.0) == "N/A (손실 거래 없음)"
 
 
 def test_app_import_smoke() -> None:

@@ -61,7 +61,7 @@ def main() -> None:
     st.dataframe(
         view.sort_values("score", ascending=False),
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
     )
     if not view.empty:
         selected = st.selectbox("AI 코멘트 프롬프트 확인", view["symbol"].tolist())

@@ -102,7 +102,7 @@ def main() -> None:
     st.dataframe(
         display,
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
         column_config={
             "공시 링크": st.column_config.LinkColumn("공시 링크"),
             "risk_score": st.column_config.NumberColumn(
@@ -114,7 +114,7 @@ def main() -> None:
     st.subheader("기업코드 조회 구조")
     if st.button("기업코드 샘플/목록 불러오기"):
         codes = client.fetch_corp_codes()
-        st.dataframe(codes.head(100), hide_index=True, use_container_width=True)
+        st.dataframe(codes.head(100), hide_index=True, width="stretch")
 
 
 main()
