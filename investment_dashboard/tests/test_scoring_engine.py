@@ -52,24 +52,55 @@ def test_scoring_range_and_weight_sum_without_disclosures() -> None:
 
 def test_disclosures_affect_event_score_and_risk_penalty() -> None:
     scanner = StockScanner()
-    rows = scanner.scan({"KR:GOOD": make_price_frame(), "KR:RISK": make_price_frame()})
+    rows = scanner.scan(
+        {
+            "KR:GOOD": make_price_frame(),
+            "KR:RISK": make_price_frame(),
+            "KR:CRIT": make_price_frame(),
+        }
+    )
     disclosures = pd.DataFrame(
         [
             {
                 "stock_code": "GOOD",
                 "disclosure_type": "공급계약",
-                "risk_tag": "긍정",
+                "risk_tag": "positive",
+                "risk_score": 15,
+                "report_nm": "단일판매ㆍ공급계약체결",
+                "rcept_dt": "20260501",
             },
             {
                 "stock_code": "RISK",
                 "disclosure_type": "소송",
-                "risk_tag": "위험",
+                "risk_tag": "risk",
+                "risk_score": 78,
+                "report_nm": "소송 등의 제기",
+                "rcept_dt": "20260501",
+            },
+            {
+                "stock_code": "CRIT",
+                "disclosure_type": "횡령배임",
+                "risk_tag": "critical",
+                "risk_score": 95,
+                "report_nm": "횡령ㆍ배임 혐의 발생",
+                "rcept_dt": "20260501",
             },
         ]
     )
     scored = ScoringEngine().score_dataframe(rows, disclosures=disclosures)
     good = scored.loc[scored["symbol"] == "GOOD"].iloc[0]
     risk = scored.loc[scored["symbol"] == "RISK"].iloc[0]
+    critical = scored.loc[scored["symbol"] == "CRIT"].iloc[0]
     assert good["event_score"] > 50
     assert risk["event_score"] < 50
     assert risk["risk_penalty"] >= 20
+    assert critical["event_score"] < risk["event_score"]
+    assert critical["risk_penalty"] >= 50
+    assert scored["score"].between(0, 100).all()
+
+
+def test_disclosure_absence_keeps_default_scoring_safe() -> None:
+    rows = StockScanner().scan({"KR:EMPTY": make_price_frame()})
+    scored = ScoringEngine().score_dataframe(rows, disclosures=pd.DataFrame())
+    assert scored["score"].between(0, 100).all()
+    assert "risk_penalty" in scored.columns

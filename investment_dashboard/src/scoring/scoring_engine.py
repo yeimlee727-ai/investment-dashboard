@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from src.dart.dart_client import aggregate_disclosure_risk
+
 
 def clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
     return max(low, min(high, value))
@@ -32,6 +34,11 @@ class ScoringEngine:
         return_20d = float(row.get("return_20d", 0) or 0)
         disclosure_type = str(row.get("disclosure_type", "") or "")
         risk_tag = str(row.get("risk_tag", "") or "")
+        risk_score = float(row.get("risk_score", 38) or 38)
+        aggregate_risk_score = float(
+            row.get("aggregate_risk_score", risk_score) or risk_score
+        )
+        aggregate_risk_tag = str(row.get("aggregate_risk_tag", risk_tag) or risk_tag)
 
         price_momentum = clamp(50 + change_rate * 4 + max(0, near_high_rate - 90) * 2)
         volume_momentum = clamp(volume_ratio * 25)
@@ -43,16 +50,17 @@ class ScoringEngine:
             + (8 if macd_hist > 0 else -8)
             + clamp(return_20d, -20, 20) * 0.6
         )
-        event_score = self._event_score(disclosure_type, risk_tag, event_bonus)
+        event_score = self._event_score(
+            disclosure_type, risk_tag, risk_score, event_bonus
+        )
         risk_penalty = 0.0
         if rsi >= 78:
             risk_penalty += 12
         if rsi <= 25:
             risk_penalty += 8
-        if risk_tag == "주의":
-            risk_penalty += 8
-        if risk_tag == "위험":
-            risk_penalty += 20
+        risk_penalty += self._disclosure_risk_penalty(
+            aggregate_risk_tag, aggregate_risk_score
+        )
         risk_control = clamp(100 - risk_penalty)
 
         total = (
@@ -92,15 +100,17 @@ class ScoringEngine:
     ) -> pd.DataFrame:
         if "stock_code" not in disclosures.columns:
             return df
-        severity = {"위험": 3, "주의": 2, "중립": 1, "긍정": 0}
+        severity = {"critical": 5, "risk": 4, "caution": 3, "neutral": 2, "positive": 1}
         context = disclosures.copy()
-        context["severity"] = context.get("risk_tag", "중립").map(severity).fillna(1)
+        context["severity"] = context.get("risk_tag", "neutral").map(severity).fillna(2)
         context = context.sort_values(
             ["stock_code", "severity"], ascending=[True, False]
         ).drop_duplicates("stock_code")
+        aggregate = aggregate_disclosure_risk(disclosures)
         mapping = context.set_index("stock_code")[
-            ["disclosure_type", "risk_tag"]
+            ["disclosure_type", "risk_tag", "risk_score"]
         ].to_dict("index")
+        aggregate_mapping = aggregate.set_index("stock_code").to_dict("index")
         enriched = df.copy()
         enriched["disclosure_type"] = enriched["symbol"].map(
             lambda symbol: mapping.get(symbol, {}).get("disclosure_type", "")
@@ -108,28 +118,72 @@ class ScoringEngine:
         enriched["risk_tag"] = enriched["symbol"].map(
             lambda symbol: mapping.get(symbol, {}).get("risk_tag", "")
         )
+        enriched["risk_score"] = enriched["symbol"].map(
+            lambda symbol: mapping.get(symbol, {}).get("risk_score", 38)
+        )
+        enriched["aggregate_risk_tag"] = enriched["symbol"].map(
+            lambda symbol: aggregate_mapping.get(symbol, {}).get(
+                "aggregate_risk_tag", "neutral"
+            )
+        )
+        enriched["aggregate_risk_score"] = enriched["symbol"].map(
+            lambda symbol: aggregate_mapping.get(symbol, {}).get(
+                "aggregate_risk_score", 38
+            )
+        )
         return enriched
 
     def _event_score(
-        self, disclosure_type: str, risk_tag: str, event_bonus: float
+        self,
+        disclosure_type: str,
+        risk_tag: str,
+        risk_score: float,
+        event_bonus: float,
     ) -> float:
-        base_by_tag = {"긍정": 72, "중립": 50, "주의": 35, "위험": 15}
+        base_by_tag = {
+            "positive": 72,
+            "neutral": 50,
+            "caution": 38,
+            "risk": 24,
+            "critical": 8,
+        }
         type_adjustment = {
             "공급계약": 8,
-            "자기주식": 8,
+            "자기주식취득": 8,
+            "현금배당": 8,
+            "무상증자": 6,
+            "신규시설투자": 2,
             "실적공시": 0,
             "유상증자": -8,
             "전환사채": -8,
+            "신주인수권부사채": -8,
+            "교환사채": -8,
             "최대주주변경": -10,
             "소송": -18,
             "감사의견": -25,
+            "횡령배임": -35,
+            "거래위험": -35,
             "기타": 0,
         }
         return clamp(
             base_by_tag.get(risk_tag, 50)
             + type_adjustment.get(disclosure_type, 0)
+            - max(0, risk_score - 70) * 0.2
             + event_bonus
         )
+
+    def _disclosure_risk_penalty(
+        self, aggregate_risk_tag: str, aggregate_risk_score: float
+    ) -> float:
+        base_penalty = {
+            "positive": 0,
+            "neutral": 0,
+            "caution": 10,
+            "risk": 24,
+            "critical": 48,
+        }.get(aggregate_risk_tag, 0)
+        score_penalty = max(0.0, aggregate_risk_score - 45) * 0.25
+        return min(60.0, base_penalty + score_penalty)
 
     def make_comment_prompt(
         self,
