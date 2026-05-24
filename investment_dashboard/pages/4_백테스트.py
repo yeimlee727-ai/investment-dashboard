@@ -10,7 +10,13 @@ import streamlit as st
 from src.backtest.backtest_engine import BacktestEngine, BacktestResult
 from src.data_providers.base import DataMode
 from src.data_providers.market_data_provider import MarketDataProvider
-from src.ui_helpers import build_market_data_provider, render_data_warning
+from src.ui_helpers import (
+    build_market_data_provider,
+    format_avg_profit_loss_ratio,
+    format_profit_factor,
+    get_backtest_warning_messages,
+    render_data_warning,
+)
 
 
 def load_input_data(
@@ -57,8 +63,13 @@ def render_metric_grid(result: BacktestResult) -> None:
         ],
         [
             ("Sharpe ratio", f"{result.sharpe_ratio:.2f}"),
-            ("Profit factor", f"{result.profit_factor:.2f}"),
-            ("평균 손익비", f"{result.avg_profit_loss_ratio:.2f}"),
+            ("Profit factor", format_profit_factor(result.profit_factor)),
+            (
+                "평균 손익비",
+                format_avg_profit_loss_ratio(
+                    result.avg_profit_loss_ratio, result.profit_factor
+                ),
+            ),
             ("거래 횟수", f"{result.trade_count}"),
         ],
         [
@@ -73,6 +84,16 @@ def render_metric_grid(result: BacktestResult) -> None:
         for col, (label, value) in zip(cols, row, strict=True):
             col.metric(label, value)
     st.metric("평균 보유기간", f"{result.average_holding_days:.1f}일")
+
+
+def render_result_warnings(result: BacktestResult, data_source: str | None) -> None:
+    for message in get_backtest_warning_messages(
+        trade_count=result.trade_count,
+        profit_factor=result.profit_factor,
+        avg_profit_loss_ratio=result.avg_profit_loss_ratio,
+        data_source=data_source,
+    ):
+        st.warning(message)
 
 
 def render_equity_report(result: BacktestResult) -> None:
@@ -111,7 +132,7 @@ def render_equity_report(result: BacktestResult) -> None:
             )
         )
     fig.update_layout(yaxis_title="초기자본 대비 평가자산")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     drawdown_fig = px.area(
         equity,
@@ -120,7 +141,7 @@ def render_equity_report(result: BacktestResult) -> None:
         title="Drawdown curve",
         labels={"drawdown_pct": "Drawdown (%)", "date": "date"},
     )
-    st.plotly_chart(drawdown_fig, use_container_width=True)
+    st.plotly_chart(drawdown_fig, width="stretch")
 
 
 def render_trade_log(result: BacktestResult) -> None:
@@ -139,7 +160,7 @@ def render_trade_log(result: BacktestResult) -> None:
         "slippage",
     ]
     trades = result.trades[[col for col in trade_columns if col in result.trades]]
-    st.dataframe(trades, hide_index=True, use_container_width=True)
+    st.dataframe(trades, hide_index=True, width="stretch")
 
 
 def main() -> None:
@@ -196,9 +217,14 @@ def main() -> None:
     if st.button("실행"):
         try:
             df = load_input_data(symbol, market, uploaded, provider.mode)
-            if df.attrs.get("data_source") == "SAMPLE_FALLBACK":
+            data_source = str(df.attrs.get("data_source", ""))
+            if data_source == "SAMPLE_FALLBACK":
                 st.warning(
                     "FALLBACK MODE: 실제 데이터 조회 실패로 샘플 데이터 기반 백테스트를 실행합니다."
+                )
+            if data_source in {"SAMPLE", "SAMPLE_FALLBACK"}:
+                st.warning(
+                    "백테스트 결과는 SAMPLE/FALLBACK 데이터 기반일 수 있으며 실제 시장 성과와 다를 수 있습니다."
                 )
             result = BacktestEngine().run(
                 df,
@@ -210,6 +236,7 @@ def main() -> None:
                 stop_take_basis=stop_take_basis,
             )
             st.info(result.mode_label)
+            render_result_warnings(result, data_source)
             render_metric_grid(result)
             render_equity_report(result)
             st.subheader("진입/청산 로그")
@@ -231,7 +258,7 @@ def main() -> None:
             st.dataframe(
                 pd.DataFrame(comparison),
                 hide_index=True,
-                use_container_width=True,
+                width="stretch",
             )
         except Exception as exc:
             st.error(f"백테스트 실패: {exc}")

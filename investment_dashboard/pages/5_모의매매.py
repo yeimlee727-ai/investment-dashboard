@@ -97,15 +97,15 @@ def render_position_charts(positions: pd.DataFrame) -> None:
     chart_data["ticker"] = chart_data["market"] + ":" + chart_data["symbol"]
     st.plotly_chart(
         px.bar(chart_data, x="ticker", y="market_value", title="포지션별 평가금액"),
-        use_container_width=True,
+        width="stretch",
     )
     st.plotly_chart(
         px.bar(chart_data, x="ticker", y="total_pnl", title="포지션별 총손익"),
-        use_container_width=True,
+        width="stretch",
     )
     st.plotly_chart(
         px.pie(chart_data, names="ticker", values="market_value", title="종목별 비중"),
-        use_container_width=True,
+        width="stretch",
     )
 
 
@@ -127,7 +127,7 @@ def render_realized_charts(realized: pd.DataFrame) -> None:
     daily["cumulative_realized_pnl"] = daily["realized_pnl"].cumsum()
     st.plotly_chart(
         px.line(daily, x="day", y="realized_pnl", title="일별 실현손익"),
-        use_container_width=True,
+        width="stretch",
     )
     st.plotly_chart(
         px.line(
@@ -136,11 +136,11 @@ def render_realized_charts(realized: pd.DataFrame) -> None:
             y="cumulative_realized_pnl",
             title="누적 실현손익",
         ),
-        use_container_width=True,
+        width="stretch",
     )
     by_symbol = data.groupby(["market", "symbol"], as_index=False)["realized_pnl"].sum()
     by_symbol["ticker"] = by_symbol["market"] + ":" + by_symbol["symbol"]
-    st.dataframe(by_symbol, hide_index=True, use_container_width=True)
+    st.dataframe(by_symbol, hide_index=True, width="stretch")
 
 
 def filter_orders(orders: pd.DataFrame) -> pd.DataFrame:
@@ -237,7 +237,7 @@ def main() -> None:
         st.dataframe(
             positions_df[[col for col in POSITION_COLUMNS if col in positions_df]],
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
         if positions_df["quote_error"].dropna().astype(bool).any():
             st.warning(
@@ -253,14 +253,14 @@ def main() -> None:
     if filtered_orders.empty:
         st.info("표시할 가상 주문 로그가 없습니다.")
     else:
-        st.dataframe(filtered_orders, hide_index=True, use_container_width=True)
+        st.dataframe(filtered_orders, hide_index=True, width="stretch")
 
     st.subheader("실현손익 리포트")
     realized_df = as_dataframe(broker.get_realized_pnl_logs())
     if realized_df.empty:
         st.info("실현손익 로그가 없습니다.")
     else:
-        st.dataframe(realized_df, hide_index=True, use_container_width=True)
+        st.dataframe(realized_df, hide_index=True, width="stretch")
     render_realized_charts(realized_df)
 
 

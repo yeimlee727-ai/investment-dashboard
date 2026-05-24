@@ -29,6 +29,44 @@ def get_data_mode_status(
     )
 
 
+def format_profit_factor(value: float) -> str:
+    if value >= 999:
+        return "999+ (손실 거래 없음)"
+    return f"{value:.2f}"
+
+
+def format_avg_profit_loss_ratio(value: float, profit_factor: float) -> str:
+    if profit_factor >= 999:
+        return "N/A (손실 거래 없음)"
+    return f"{value:.2f}"
+
+
+def get_backtest_warning_messages(
+    trade_count: int,
+    profit_factor: float,
+    avg_profit_loss_ratio: float,
+    data_source: str | None = None,
+) -> list[str]:
+    messages = []
+    if trade_count < 10:
+        messages.append(
+            "거래 횟수가 적어 통계적 신뢰도가 낮습니다. "
+            "이 결과만으로 전략 성과를 판단하지 마세요."
+        )
+    if profit_factor >= 999:
+        messages.append(
+            "손실 거래가 없어 Profit factor가 과도하게 높게 보일 수 있습니다. "
+            "표시는 999+로 제한합니다."
+        )
+    if profit_factor >= 999 or avg_profit_loss_ratio == 0:
+        messages.append("N/A: 손실 거래가 없어 평균 손익비 계산이 제한됩니다.")
+    if data_source in {"SAMPLE", "SAMPLE_FALLBACK"}:
+        messages.append(
+            "SAMPLE/FALLBACK 데이터 기반 결과는 실제 시장 성과와 다를 수 있습니다."
+        )
+    return messages
+
+
 def select_data_mode() -> DataMode:
     selected = st.sidebar.radio(
         "데이터 모드",
