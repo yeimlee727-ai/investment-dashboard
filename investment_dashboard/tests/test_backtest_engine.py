@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 
 from src.backtest.backtest_engine import BacktestEngine
@@ -125,3 +127,89 @@ def test_summary_metrics_are_reasonable() -> None:
     assert result.win_rate == 100
     assert result.mdd <= 0
     assert result.average_holding_days == 1.0
+    assert result.annualized_return > 0
+    assert math.isfinite(result.sharpe_ratio)
+    assert result.profit_factor >= 0
+
+
+def test_drawdown_curve_is_calculated() -> None:
+    df = make_frame()
+    df.loc[63, "close"] = 90
+    result = SignalBacktestEngine(signal_index=61).run(
+        df, strategy="custom", holding_days=1, fee_rate=0, slippage_rate=0
+    )
+    assert "drawdown_pct" in result.equity_curve.columns
+    assert result.equity_curve["drawdown_pct"].min() < 0
+    assert result.mdd == round(float(result.equity_curve["drawdown_pct"].min()), 2)
+
+
+def test_trade_log_contains_report_columns() -> None:
+    df = make_frame()
+    result = SignalBacktestEngine(signal_index=61).run(
+        df, strategy="custom", holding_days=1, fee_rate=0, slippage_rate=0
+    )
+    required = {
+        "entry_date",
+        "exit_date",
+        "entry_price",
+        "exit_price",
+        "quantity",
+        "gross_pnl",
+        "net_pnl",
+        "return_pct",
+        "holding_days",
+        "exit_reason",
+        "fee",
+        "slippage",
+    }
+    assert required.issubset(result.trades.columns)
+
+
+def test_empty_trade_log_still_has_report_columns() -> None:
+    result = SignalBacktestEngine(signal_index=999).run(
+        make_frame(), strategy="custom", fee_rate=0, slippage_rate=0
+    )
+    assert result.trade_count == 0
+    assert "entry_date" in result.trades.columns
+    assert "drawdown_pct" in result.equity_curve.columns
+
+
+def test_profit_factor_and_consecutive_wins_losses() -> None:
+    df = make_frame(length=90)
+    df.loc[63, "close"] = 110
+    df.loc[66, "close"] = 90
+
+    class MultiSignalBacktestEngine(BacktestEngine):
+        def _entry_signal(self, data: pd.DataFrame, i: int, strategy: str) -> bool:
+            return i in {61, 64}
+
+    result = MultiSignalBacktestEngine().run(
+        df,
+        strategy="custom",
+        holding_days=1,
+        fee_rate=0,
+        slippage_rate=0,
+    )
+    assert result.trade_count == 2
+    assert result.profit_factor > 0
+    assert result.max_consecutive_wins == 1
+    assert result.max_consecutive_losses == 1
+
+
+def test_final_metrics_are_finite() -> None:
+    result = SignalBacktestEngine(signal_index=999).run(
+        make_frame(), strategy="custom", fee_rate=0, slippage_rate=0
+    )
+    metrics = [
+        result.total_return,
+        result.annualized_return,
+        result.win_rate,
+        result.mdd,
+        result.sharpe_ratio,
+        result.profit_factor,
+        result.avg_profit_loss_ratio,
+        result.total_fees,
+        result.total_slippage,
+        result.average_holding_days,
+    ]
+    assert all(math.isfinite(value) for value in metrics)

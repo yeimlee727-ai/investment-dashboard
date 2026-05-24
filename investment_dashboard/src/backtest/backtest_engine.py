@@ -7,15 +7,37 @@ import pandas as pd
 
 from src.indicators.technicals import add_technical_indicators
 
+TRADE_COLUMNS = [
+    "entry_date",
+    "exit_date",
+    "entry_price",
+    "exit_price",
+    "quantity",
+    "gross_pnl",
+    "net_pnl",
+    "return_pct",
+    "profit_rate",
+    "pnl",
+    "holding_days",
+    "exit_reason",
+    "fee",
+    "slippage",
+    "slippage_cost",
+]
+
 
 @dataclass
 class BacktestResult:
     total_return: float
+    annualized_return: float
     win_rate: float
     mdd: float
+    sharpe_ratio: float
+    profit_factor: float
     avg_profit_loss_ratio: float
     trade_count: int
     max_consecutive_losses: int
+    max_consecutive_wins: int
     total_fees: float
     total_slippage: float
     average_holding_days: float
@@ -115,10 +137,15 @@ class BacktestEngine:
                             "exit_date": str(row["date"]),
                             "entry_price": entry_price,
                             "exit_price": exit_price,
+                            "quantity": quantity,
+                            "gross_pnl": exit_value - entry_cost,
+                            "net_pnl": pnl,
+                            "return_pct": profit_rate,
                             "profit_rate": profit_rate,
                             "pnl": pnl,
                             "holding_days": i - entry_index,
                             "fee": entry_fee + exit_fee,
+                            "slippage": entry_slippage + exit_slippage,
                             "slippage_cost": entry_slippage + exit_slippage,
                             "exit_reason": exit_reason,
                         }
@@ -128,9 +155,17 @@ class BacktestEngine:
             mark_to_market = (
                 cash if not in_position else cash + quantity * float(row["close"])
             )
-            equity_points.append({"date": str(row["date"]), "equity": mark_to_market})
+            equity_points.append(
+                {
+                    "date": str(row["date"]),
+                    "equity": mark_to_market,
+                    "equity_pct": (
+                        mark_to_market / initial_cash * 100 if initial_cash else 0.0
+                    ),
+                }
+            )
 
-        trades_df = pd.DataFrame(trades)
+        trades_df = pd.DataFrame(trades, columns=TRADE_COLUMNS)
         equity_df = pd.DataFrame(equity_points)
         mode_label = (
             "장중 터치 기준 백테스트" if use_intraday_touch else "종가 기준 백테스트"
@@ -207,14 +242,24 @@ class BacktestEngine:
         mode_label: str,
     ) -> BacktestResult:
         if equity.empty:
-            equity = pd.DataFrame([{"date": "", "equity": initial_cash}])
+            equity = pd.DataFrame(
+                [{"date": "", "equity": initial_cash, "equity_pct": 100.0}]
+            )
+        equity = self._attach_drawdown(equity, initial_cash)
         total_return = (float(equity.iloc[-1]["equity"]) / initial_cash - 1) * 100
+        annualized_return = self._annualized_return(equity, initial_cash)
+        sharpe_ratio = self._sharpe_ratio(equity)
+        mdd = float(equity["drawdown_pct"].min()) if "drawdown_pct" in equity else 0.0
         if trades.empty:
             return BacktestResult(
                 round(total_return, 2),
+                round(annualized_return, 2),
+                0.0,
+                round(mdd, 2),
+                round(sharpe_ratio, 2),
                 0.0,
                 0.0,
-                0.0,
+                0,
                 0,
                 0,
                 0.0,
@@ -224,29 +269,33 @@ class BacktestEngine:
                 trades,
                 equity,
             )
-        wins = trades[trades["profit_rate"] > 0]
-        losses = trades[trades["profit_rate"] <= 0]
+        wins = trades[trades["net_pnl"] > 0]
+        losses = trades[trades["net_pnl"] <= 0]
         win_rate = len(wins) / len(trades) * 100
-        gains = wins["profit_rate"].mean() if not wins.empty else 0
-        loss_abs = abs(losses["profit_rate"].mean()) if not losses.empty else np.nan
+        gains = wins["return_pct"].mean() if not wins.empty else 0
+        loss_abs = abs(losses["return_pct"].mean()) if not losses.empty else np.nan
         avg_pl = float(gains / loss_abs) if loss_abs and not np.isnan(loss_abs) else 0.0
-        peak = equity["equity"].cummax()
-        mdd = float(((equity["equity"] / peak) - 1).min() * 100)
-        max_losses = self._max_consecutive_losses(trades["profit_rate"].tolist())
+        profit_factor = self._profit_factor(trades)
+        max_losses = self._max_consecutive(trades["net_pnl"].tolist(), wins=False)
+        max_wins = self._max_consecutive(trades["net_pnl"].tolist(), wins=True)
         total_fees = float(trades["fee"].sum()) if "fee" in trades else 0.0
         total_slippage = (
-            float(trades["slippage_cost"].sum()) if "slippage_cost" in trades else 0.0
+            float(trades["slippage"].sum()) if "slippage" in trades else 0.0
         )
         average_holding_days = (
             float(trades["holding_days"].mean()) if "holding_days" in trades else 0.0
         )
         return BacktestResult(
             round(total_return, 2),
+            round(annualized_return, 2),
             round(win_rate, 2),
             round(mdd, 2),
+            round(sharpe_ratio, 2),
+            round(profit_factor, 2),
             round(avg_pl, 2),
             len(trades),
             max_losses,
+            max_wins,
             round(total_fees, 2),
             round(total_slippage, 2),
             round(average_holding_days, 1),
@@ -255,10 +304,62 @@ class BacktestEngine:
             equity,
         )
 
-    def _max_consecutive_losses(self, profit_rates: list[float]) -> int:
+    def _attach_drawdown(
+        self, equity: pd.DataFrame, initial_cash: float
+    ) -> pd.DataFrame:
+        curve = equity.copy()
+        curve["equity"] = pd.to_numeric(curve["equity"], errors="coerce").fillna(
+            initial_cash
+        )
+        curve["equity_pct"] = (
+            curve["equity"] / initial_cash * 100 if initial_cash else 0.0
+        )
+        peak = curve["equity"].cummax().replace(0, np.nan)
+        curve["drawdown_pct"] = ((curve["equity"] / peak) - 1).fillna(0.0) * 100
+        return curve
+
+    def _annualized_return(self, equity: pd.DataFrame, initial_cash: float) -> float:
+        if equity.empty or initial_cash <= 0:
+            return 0.0
+        final_equity = float(equity.iloc[-1]["equity"])
+        if final_equity <= 0:
+            return -100.0
+        dates = pd.to_datetime(equity["date"], errors="coerce").dropna()
+        if len(dates) >= 2:
+            days = max((dates.iloc[-1] - dates.iloc[0]).days, 1)
+        else:
+            days = max(len(equity), 1)
+        years = max(days / 365.25, 1 / 252)
+        annualized = (final_equity / initial_cash) ** (1 / years) - 1
+        return float(annualized * 100) if np.isfinite(annualized) else 0.0
+
+    def _sharpe_ratio(self, equity: pd.DataFrame) -> float:
+        if equity.empty or len(equity) < 2:
+            return 0.0
+        returns = equity["equity"].pct_change().replace([np.inf, -np.inf], np.nan)
+        returns = returns.dropna()
+        if returns.empty:
+            return 0.0
+        std = float(returns.std(ddof=0))
+        if std == 0 or not np.isfinite(std):
+            return 0.0
+        sharpe = float(returns.mean()) / std * np.sqrt(252)
+        return float(sharpe) if np.isfinite(sharpe) else 0.0
+
+    def _profit_factor(self, trades: pd.DataFrame) -> float:
+        if trades.empty or "gross_pnl" not in trades:
+            return 0.0
+        gross_profit = float(trades.loc[trades["gross_pnl"] > 0, "gross_pnl"].sum())
+        gross_loss = abs(float(trades.loc[trades["gross_pnl"] < 0, "gross_pnl"].sum()))
+        if gross_loss == 0:
+            return 999.0 if gross_profit > 0 else 0.0
+        value = gross_profit / gross_loss
+        return float(value) if np.isfinite(value) else 0.0
+
+    def _max_consecutive(self, pnls: list[float], wins: bool) -> int:
         best = current = 0
-        for rate in profit_rates:
-            if rate <= 0:
+        for pnl in pnls:
+            if (wins and pnl > 0) or (not wins and pnl <= 0):
                 current += 1
                 best = max(best, current)
             else:
