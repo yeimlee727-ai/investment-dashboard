@@ -5,6 +5,90 @@ import streamlit as st
 from src.data_providers.base import DataMode
 from src.data_providers.market_data_provider import MarketDataProvider
 
+KOREAN_COLUMN_LABELS = {
+    "symbol": "종목코드",
+    "name": "종목명",
+    "market": "시장",
+    "sector": "섹터",
+    "memo": "메모",
+    "latest_price": "최근가",
+    "change_pct": "등락률(%)",
+    "data_source": "데이터 출처",
+    "provider": "데이터 제공자",
+    "quote_error": "시세 오류",
+    "as_of": "기준시각",
+    "score": "점수",
+    "volume_ratio": "거래량 비율",
+    "risk_tag": "리스크 태그",
+    "risk_penalty": "리스크 감점",
+    "currency": "통화",
+    "quantity": "수량",
+    "avg_price": "평균단가",
+    "current_price": "현재가",
+    "market_value": "평가금액",
+    "market_value_krw": "평가금액(원화)",
+    "cost_basis": "매입금액",
+    "cost_basis_krw": "매입금액(원화)",
+    "unrealized_pnl": "평가손익",
+    "unrealized_pnl_krw": "평가손익(원화)",
+    "unrealized_pnl_pct": "평가손익률(%)",
+    "realized_pnl": "실현손익",
+    "realized_pnl_krw": "실현손익(원화)",
+    "realized_pnl_pct": "실현손익률(%)",
+    "total_pnl": "총손익",
+    "total_pnl_krw": "총손익(원화)",
+    "total_pnl_pct": "총손익률(%)",
+    "position_weight": "비중",
+    "position_weight_krw": "비중(원화 기준)",
+    "fx_rate": "환율",
+    "fx_data_source": "환율 출처",
+    "fx_error": "환율 오류",
+    "updated_at": "갱신시각",
+    "created_at": "생성시각",
+    "side": "구분",
+    "price": "가격",
+    "status": "상태",
+    "reason": "사유",
+    "error_message": "오류 메시지",
+    "realized_at": "실현시각",
+    "entry_price": "진입가",
+    "exit_price": "청산가",
+    "holding_days": "보유일수",
+    "exit_reason": "청산사유",
+    "ticker": "종목",
+    "corp_name": "기업명",
+    "stock_code": "종목코드",
+    "report_nm": "공시명",
+    "risk_score": "위험 점수",
+    "페이지": "페이지",
+    "설명": "설명",
+}
+
+
+def korean_column_name(column: str) -> str:
+    return KOREAN_COLUMN_LABELS.get(column, column)
+
+
+def localize_columns(
+    rows_or_frame: object,
+) -> object:
+    if hasattr(rows_or_frame, "rename"):
+        return rows_or_frame.rename(columns=KOREAN_COLUMN_LABELS)  # type: ignore[no-any-return]
+    if isinstance(rows_or_frame, list):
+        return [
+            {korean_column_name(str(key)): value for key, value in row.items()}
+            for row in rows_or_frame
+            if isinstance(row, dict)
+        ]
+    return rows_or_frame
+
+
+def mock_delete_warning_message() -> str:
+    return (
+        "이 삭제 기능은 MockBroker 기반 테스트 데이터 정리용입니다. "
+        "실제 주문, 실제 체결, 실제 계좌와는 무관합니다."
+    )
+
 
 def get_data_mode_status(
     mode: DataMode,

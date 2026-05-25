@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, time, timezone
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from src.broker.base import Broker, OrderRequest, OrderResult
@@ -401,6 +401,61 @@ class MockBroker(Broker):
                 }
                 for log in logs
             ]
+
+    def delete_position(
+        self,
+        symbol: str,
+        market: str,
+        delete_orders: bool = False,
+        delete_realized_pnl: bool = False,
+    ) -> dict[str, int | str | bool]:
+        symbol = symbol.upper().strip()
+        market = market.upper().strip()
+        if not symbol or market not in {"KR", "US"}:
+            return {
+                "success": False,
+                "message": "삭제 대상 종목코드 또는 시장구분이 올바르지 않습니다.",
+                "deleted_positions": 0,
+                "deleted_orders": 0,
+                "deleted_realized_pnl": 0,
+            }
+        with get_session() as session:
+            position_result = session.execute(
+                delete(VirtualPosition).where(
+                    VirtualPosition.symbol == symbol,
+                    VirtualPosition.market == market,
+                )
+            )
+            deleted_positions = int(position_result.rowcount or 0)
+            deleted_orders = 0
+            deleted_realized = 0
+            if delete_orders:
+                order_result = session.execute(
+                    delete(VirtualOrder).where(
+                        VirtualOrder.symbol == symbol,
+                        VirtualOrder.market == market,
+                    )
+                )
+                deleted_orders = int(order_result.rowcount or 0)
+            if delete_realized_pnl:
+                realized_result = session.execute(
+                    delete(RealizedPnlLog).where(
+                        RealizedPnlLog.symbol == symbol,
+                        RealizedPnlLog.market == market,
+                    )
+                )
+                deleted_realized = int(realized_result.rowcount or 0)
+            return {
+                "success": deleted_positions > 0,
+                "message": (
+                    "MockBroker 로컬 포지션 데이터를 삭제했습니다."
+                    if deleted_positions
+                    else "삭제할 MockBroker 포지션을 찾지 못했습니다."
+                ),
+                "deleted_positions": deleted_positions,
+                "deleted_orders": deleted_orders,
+                "deleted_realized_pnl": deleted_realized,
+            }
 
     def _apply_buy(
         self,

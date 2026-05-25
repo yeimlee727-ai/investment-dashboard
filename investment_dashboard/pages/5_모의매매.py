@@ -13,6 +13,8 @@ from src.risk.risk_engine import RiskConfig, RiskEngine
 from src.ui_helpers import (
     build_market_data_provider,
     get_fx_status_message,
+    localize_columns,
+    mock_delete_warning_message,
     render_data_warning,
 )
 
@@ -189,7 +191,7 @@ def render_realized_charts(realized: pd.DataFrame) -> None:
     )
     by_symbol = data.groupby(["market", "symbol"], as_index=False)["realized_pnl"].sum()
     by_symbol["ticker"] = by_symbol["market"] + ":" + by_symbol["symbol"]
-    st.dataframe(by_symbol, hide_index=True, width="stretch")
+    st.dataframe(localize_columns(by_symbol), hide_index=True, width="stretch")
 
 
 def filter_orders(orders: pd.DataFrame) -> pd.DataFrame:
@@ -220,6 +222,51 @@ def filter_orders(orders: pd.DataFrame) -> pd.DataFrame:
         view["created_at"].dt.date.between(start, end) | view["created_at"].isna()
     ]
     return view
+
+
+def render_position_delete_ui(
+    broker: MockBroker, positions: list[dict[str, object]]
+) -> None:
+    st.subheader("테스트 포지션 삭제")
+    st.warning(mock_delete_warning_message())
+    if not positions:
+        st.info("삭제할 MockBroker 가상 포지션이 없습니다.")
+        return
+    options = {
+        f"{position['market']} / {position['symbol']}": position
+        for position in positions
+        if position.get("market") and position.get("symbol")
+    }
+    target_key = st.selectbox("삭제할 포지션 선택", ["선택 안 함", *list(options)])
+    delete_orders = st.checkbox("관련 가상 주문 로그도 함께 삭제")
+    delete_realized = st.checkbox("관련 실현손익 로그도 함께 삭제")
+    confirm = st.checkbox(
+        "이 삭제는 실제 주문이 아니라 MockBroker 로컬 데이터 정리 기능임을 이해했습니다."
+    )
+    if st.button("선택 포지션 삭제", type="secondary"):
+        if target_key == "선택 안 함":
+            st.warning("삭제할 가상 포지션을 선택하세요.")
+            return
+        if not confirm:
+            st.warning("삭제 확인 체크박스를 선택하세요.")
+            return
+        target = options[target_key]
+        result = broker.delete_position(
+            symbol=str(target["symbol"]),
+            market=str(target["market"]),
+            delete_orders=delete_orders,
+            delete_realized_pnl=delete_realized,
+        )
+        if result["success"]:
+            st.success(
+                "테스트 포지션을 삭제했습니다. "
+                f"포지션 {result['deleted_positions']}건, "
+                f"가상 주문 로그 {result['deleted_orders']}건, "
+                f"실현손익 로그 {result['deleted_realized_pnl']}건 정리."
+            )
+            st.rerun()
+        else:
+            st.error(str(result["message"]))
 
 
 def main() -> None:
@@ -309,7 +356,9 @@ def main() -> None:
 
     if not positions_df.empty:
         st.dataframe(
-            positions_df[[col for col in POSITION_COLUMNS if col in positions_df]],
+            localize_columns(
+                positions_df[[col for col in POSITION_COLUMNS if col in positions_df]]
+            ),
             hide_index=True,
             width="stretch",
         )
@@ -326,6 +375,7 @@ def main() -> None:
             )
     else:
         st.info("보유 중인 가상 포지션이 없습니다.")
+    render_position_delete_ui(broker, positions)
     render_position_charts(positions_df)
 
     st.subheader("가상 주문/체결 로그")
@@ -334,14 +384,16 @@ def main() -> None:
     if filtered_orders.empty:
         st.info("표시할 가상 주문 로그가 없습니다.")
     else:
-        st.dataframe(filtered_orders, hide_index=True, width="stretch")
+        st.dataframe(
+            localize_columns(filtered_orders), hide_index=True, width="stretch"
+        )
 
     st.subheader("실현손익 리포트")
     realized_df = as_dataframe(broker.get_realized_pnl_logs())
     if realized_df.empty:
         st.info("실현손익 로그가 없습니다.")
     else:
-        st.dataframe(realized_df, hide_index=True, width="stretch")
+        st.dataframe(localize_columns(realized_df), hide_index=True, width="stretch")
     render_realized_charts(realized_df)
 
 

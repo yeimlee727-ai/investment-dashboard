@@ -18,6 +18,7 @@ from src.scoring.scoring_engine import ScoringEngine
 from src.ui_helpers import (
     build_market_data_provider,
     get_data_mode_status,
+    localize_columns,
     render_data_warning,
 )
 
@@ -234,7 +235,7 @@ def render_scanner_summary(scored: pd.DataFrame) -> None:
         "data_source",
     ]
     st.dataframe(
-        view[[col for col in columns if col in view.columns]],
+        localize_columns(view[[col for col in columns if col in view.columns]]),
         hide_index=True,
         width="stretch",
     )
@@ -273,16 +274,18 @@ def render_dart_summary(disclosures: pd.DataFrame) -> None:
         st.info("최근 critical/risk 공시 요약이 없습니다.")
         return
     st.dataframe(
-        high_risk[
-            [
-                "corp_name",
-                "stock_code",
-                "report_nm",
-                "risk_tag",
-                "risk_score",
-                "data_source",
+        localize_columns(
+            high_risk[
+                [
+                    "corp_name",
+                    "stock_code",
+                    "report_nm",
+                    "risk_tag",
+                    "risk_score",
+                    "data_source",
+                ]
             ]
-        ],
+        ),
         hide_index=True,
         width="stretch",
     )
@@ -379,7 +382,7 @@ def render_navigation_guide() -> None:
     st.subheader("페이지 이동 안내")
     st.caption("왼쪽 사이드바의 Pages 메뉴에서 각 기능 페이지로 이동할 수 있습니다.")
     st.dataframe(
-        pd.DataFrame(PAGE_GUIDE, columns=["페이지", "설명"]),
+        localize_columns(pd.DataFrame(PAGE_GUIDE, columns=["페이지", "설명"])),
         hide_index=True,
         width="stretch",
     )

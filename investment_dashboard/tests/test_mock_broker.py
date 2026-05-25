@@ -243,6 +243,65 @@ def test_position_weight_krw_uses_fx_converted_total(isolated_session) -> None:
     assert by_symbol["GRAB"]["position_weight_krw"] == 50
 
 
+def test_delete_position_removes_specific_market_symbol(isolated_session) -> None:
+    broker = make_broker(FakeProvider({("KR", "005930"): 1000, ("US", "GRAB"): 4}))
+    broker.place_order(
+        OrderRequest(symbol="005930", market="KR", side="BUY", quantity=1, price=1000)
+    )
+    broker.place_order(
+        OrderRequest(symbol="GRAB", market="US", side="BUY", quantity=1, price=3)
+    )
+
+    result = broker.delete_position("GRAB", "US")
+    positions = broker.get_positions()
+
+    assert result["success"] is True
+    assert result["deleted_positions"] == 1
+    assert {position["symbol"] for position in positions} == {"005930"}
+
+
+def test_delete_position_can_remove_related_logs(isolated_session) -> None:
+    broker = make_broker(FakeProvider({("KR", "005930"): 1000}))
+    broker.place_order(
+        OrderRequest(symbol="005930", market="KR", side="BUY", quantity=10, price=1000)
+    )
+    broker.place_order(
+        OrderRequest(symbol="005930", market="KR", side="SELL", quantity=4, price=1200)
+    )
+
+    result = broker.delete_position(
+        "005930", "KR", delete_orders=True, delete_realized_pnl=True
+    )
+
+    assert result["success"] is True
+    assert result["deleted_positions"] == 1
+    assert result["deleted_orders"] == 2
+    assert result["deleted_realized_pnl"] == 1
+    with isolated_session() as session:
+        assert session.execute(select(VirtualOrder)).scalars().all() == []
+        assert session.execute(select(RealizedPnlLog)).scalars().all() == []
+
+
+def test_delete_missing_position_is_safe(isolated_session) -> None:
+    broker = make_broker()
+
+    result = broker.delete_position("NOPE", "US")
+
+    assert result["success"] is False
+    assert result["deleted_positions"] == 0
+    assert "찾지 못했습니다" in str(result["message"])
+
+
+def test_delete_position_rejects_invalid_market(isolated_session) -> None:
+    broker = make_broker()
+
+    result = broker.delete_position("005930", "JP")
+
+    assert result["success"] is False
+    assert result["deleted_positions"] == 0
+    assert "올바르지" in str(result["message"])
+
+
 def test_order_and_realized_pnl_reports_include_required_columns(
     isolated_session,
 ) -> None:
