@@ -6,7 +6,11 @@ from sqlalchemy import delete, select
 from src.database import get_session, init_db
 from src.data_providers.market_data_provider import MarketDataProvider
 from src.models import WatchlistItem
-from src.ui_helpers import build_market_data_provider, render_data_warning
+from src.ui_helpers import (
+    build_market_data_provider,
+    localize_columns,
+    render_data_warning,
+)
 
 
 def load_items() -> list[WatchlistItem]:
@@ -42,14 +46,15 @@ def add_item(symbol: str, name: str, market: str, sector: str, memo: str) -> str
             return "created"
 
 
-def remove_item(symbol: str, market: str) -> None:
+def remove_item(symbol: str, market: str) -> int:
     with get_session() as session:
-        session.execute(
+        result = session.execute(
             delete(WatchlistItem).where(
                 WatchlistItem.symbol == symbol,
                 WatchlistItem.market == market,
             )
         )
+        return int(result.rowcount or 0)
 
 
 def build_watchlist_rows(
@@ -119,19 +124,30 @@ def main() -> None:
         st.info("등록된 관심종목이 없습니다.")
         return
     rows = build_watchlist_rows(items, provider)
-    st.dataframe(rows, hide_index=True, width="stretch")
+    st.dataframe(localize_columns(rows), hide_index=True, width="stretch")
     if any(row["quote_error"] for row in rows):
         st.warning(
             "일부 관심종목의 현재가 조회에 실패했습니다. quote_error를 확인하세요."
         )
 
-    options = {f"{item.market}:{item.symbol}": item for item in items}
-    target_key = st.selectbox("삭제할 종목", list(options))
-    confirm_delete = st.checkbox("정말 삭제합니다")
-    if st.button("삭제", type="secondary", disabled=not confirm_delete):
+    st.subheader("관심종목 삭제")
+    st.caption("관심종목 삭제는 실제 주문과 무관한 목록 정리 기능입니다.")
+    options = {f"{item.market} / {item.symbol} - {item.name}": item for item in items}
+    target_key = st.selectbox("삭제할 종목 선택", ["선택 안 함", *list(options)])
+    confirm_delete = st.checkbox("선택한 관심종목을 삭제하는 것을 확인합니다.")
+    if st.button("선택 종목 삭제", type="secondary"):
+        if target_key == "선택 안 함":
+            st.warning("삭제할 관심종목을 선택하세요.")
+            return
+        if not confirm_delete:
+            st.warning("삭제 확인 체크박스를 선택하세요.")
+            return
         target = options[target_key]
-        remove_item(target.symbol, target.market)
-        st.success("관심종목을 삭제했습니다.")
+        deleted_count = remove_item(target.symbol, target.market)
+        if deleted_count:
+            st.success("관심종목을 삭제했습니다.")
+        else:
+            st.warning("삭제할 관심종목을 찾지 못했습니다.")
         st.rerun()
 
 

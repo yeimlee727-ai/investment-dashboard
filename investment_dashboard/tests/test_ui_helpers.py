@@ -8,6 +8,9 @@ from src.ui_helpers import (
     get_backtest_warning_messages,
     get_data_mode_status,
     get_fx_status_message,
+    korean_column_name,
+    localize_columns,
+    mock_delete_warning_message,
 )
 
 
@@ -45,6 +48,20 @@ def test_fx_status_messages() -> None:
     assert "1,350.00" in get_fx_status_message(1350.0, "SAMPLE_FX", None)
     assert "제한" in get_fx_status_message(None, "REAL_FX_ERROR", "network")
     assert "오류" in get_fx_status_message(1350.0, "SAMPLE_FX_FALLBACK", "network")
+
+
+def test_korean_column_label_helpers() -> None:
+    localized = localize_columns([{"symbol": "005930", "market_value_krw": 1000}])
+
+    assert korean_column_name("symbol") == "종목코드"
+    assert localized == [{"종목코드": "005930", "평가금액(원화)": 1000}]
+
+
+def test_mock_delete_warning_message_is_clear() -> None:
+    message = mock_delete_warning_message()
+
+    assert "MockBroker" in message
+    assert "실제 주문" in message
 
 
 def test_app_import_smoke() -> None:

@@ -9,7 +9,11 @@ from src.dart.dart_client import DartClient
 from src.models import WatchlistItem
 from src.scanner.stock_scanner import StockScanner
 from src.scoring.scoring_engine import ScoringEngine
-from src.ui_helpers import build_market_data_provider, render_data_warning
+from src.ui_helpers import (
+    build_market_data_provider,
+    localize_columns,
+    render_data_warning,
+)
 
 
 def load_watchlist_pairs() -> list[tuple[str, str]]:
@@ -58,11 +62,23 @@ def main() -> None:
     for label in filters:
         view = view[view[mapping[label]]]
 
-    st.dataframe(
-        view.sort_values("score", ascending=False),
-        hide_index=True,
-        width="stretch",
-    )
+    display_columns = [
+        "symbol",
+        "market",
+        "score",
+        "change_pct",
+        "volume_ratio",
+        "risk_tag",
+        "risk_penalty",
+        "data_source",
+    ]
+    display = view.sort_values("score", ascending=False)
+    display = display[[col for col in display_columns if col in display.columns]]
+    numeric_columns = ["score", "change_pct", "volume_ratio", "risk_penalty"]
+    for column in numeric_columns:
+        if column in display.columns:
+            display[column] = display[column].round(2)
+    st.dataframe(localize_columns(display), hide_index=True, width="stretch")
     if not view.empty:
         selected = st.selectbox("AI 코멘트 프롬프트 확인", view["symbol"].tolist())
         prompt = str(view.loc[view["symbol"] == selected, "comment_prompt"].iloc[0])
