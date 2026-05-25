@@ -261,6 +261,101 @@ def test_us_fx_error_is_reported_safely() -> None:
     assert result.allocation_plan.empty
 
 
+def test_rebalancing_current_weight_uses_krw_converted_values() -> None:
+    positions = [
+        {
+            "symbol": "360750",
+            "market": "KR",
+            "name": "TIGER 미국S&P500",
+            "market_value_krw": 814_525,
+            "position_weight_krw": None,
+        },
+        {
+            "symbol": "390390",
+            "market": "KR",
+            "name": "KODEX 미국반도체",
+            "market_value_krw": 777_424,
+            "position_weight_krw": None,
+        },
+        {
+            "symbol": "453870",
+            "market": "KR",
+            "name": "TIGER 인도니프티50",
+            "market_value_krw": 987_381,
+            "position_weight_krw": None,
+        },
+        {
+            "symbol": "GRAB",
+            "market": "US",
+            "name": "GRAB",
+            "market_value_krw": 157_950,
+            "position_weight_krw": None,
+        },
+    ]
+    provider = FakeHistoryProvider(
+        {
+            ("360750", "KR"): make_history("360750"),
+            ("390390", "KR"): make_history("390390"),
+            ("453870", "KR"): make_history("453870"),
+            ("GRAB", "US"): make_history("GRAB", market="US"),
+        }
+    )
+
+    result = RebalancingEngine().analyze(
+        positions,
+        provider,
+        target_weights={
+            "미국 코어 ETF": 35.0,
+            "미국 반도체/AI ETF": 20.0,
+            "인도 ETF": 15.0,
+            "개별 성장주": 5.0,
+            "현금": 25.0,
+        },
+        additional_investment_krw=3_000_000,
+    )
+    target = result.target_comparison.set_index("asset_class")
+
+    assert target.loc["개별 성장주", "current_weight"] == 5.77
+    assert target.loc["개별 성장주", "current_weight"] < 10
+    assert result.risk_summary["total_market_value_krw"] == 2_737_280
+
+
+def test_rebalancing_allocation_does_not_use_us_original_currency_value() -> None:
+    positions = [
+        {
+            "symbol": "360750",
+            "market": "KR",
+            "name": "TIGER 미국S&P500",
+            "market_value_krw": 2_500_000,
+            "position_weight_krw": None,
+        },
+        {
+            "symbol": "GRAB",
+            "market": "US",
+            "name": "GRAB",
+            "market_value_krw": 157_950,
+            "position_weight_krw": None,
+        },
+    ]
+    provider = FakeHistoryProvider(
+        {
+            ("360750", "KR"): make_history("360750"),
+            ("GRAB", "US"): make_history("GRAB", market="US"),
+        }
+    )
+
+    result = RebalancingEngine().analyze(
+        positions,
+        provider,
+        target_weights={"미국 코어 ETF": 35.0, "개별 성장주": 10.0, "현금": 55.0},
+        additional_investment_krw=1_000_000,
+    )
+    target = result.target_comparison.set_index("asset_class")
+
+    assert target.loc["개별 성장주", "current_weight"] == 5.94
+    assert result.allocation_plan["adjusted_amount"].sum() <= 1_000_000
+
+
 def test_all_market_values_none_are_handled_safely() -> None:
     positions = [
         make_position(

@@ -63,10 +63,16 @@ def test_fx_status_messages() -> None:
 
 
 def test_korean_column_label_helpers() -> None:
-    localized = localize_columns([{"symbol": "005930", "market_value_krw": 1000}])
+    localized = localize_columns(
+        [{"symbol": "005930", "market_value": 10.5, "market_value_krw": 1000}]
+    )
 
     assert korean_column_name("symbol") == "종목코드"
-    assert localized == [{"종목코드": "005930", "평가금액(원화)": 1000}]
+    assert korean_column_name("position_weight_krw") == "비중(원화 기준)"
+    assert korean_column_name("fx_rate") == "적용 환율"
+    assert localized == [
+        {"종목코드": "005930", "평가금액(원통화)": 10.5, "평가금액(원화)": 1000}
+    ]
 
 
 def test_mock_delete_warning_message_is_clear() -> None:

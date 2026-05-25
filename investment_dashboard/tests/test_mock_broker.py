@@ -8,6 +8,7 @@ from sqlalchemy import select
 from src.broker.base import OrderRequest
 from src.broker.mock_broker import MockBroker
 from src.data_providers.base import FXRate
+from src.data_providers.sample_provider import SampleDataProvider
 from src.models import RealizedPnlLog, VirtualOrder, VirtualPosition
 from src.risk.risk_engine import RiskConfig, RiskEngine
 
@@ -241,6 +242,57 @@ def test_position_weight_krw_uses_fx_converted_total(isolated_session) -> None:
     assert by_symbol["GRAB"]["market_value_krw"] == 10_000
     assert by_symbol["005930"]["position_weight_krw"] == 50
     assert by_symbol["GRAB"]["position_weight_krw"] == 50
+
+
+def test_mixed_kr_us_portfolio_uses_krw_weight_for_grab(isolated_session) -> None:
+    provider = FakeProvider(
+        {
+            ("KR", "360750"): 26_275,
+            ("KR", "390390"): 48_589,
+            ("KR", "453870"): 16_186.573770491803,
+            ("US", "GRAB"): 3.51,
+        },
+        fx_rate=1500.0,
+    )
+    broker = make_broker(provider)
+    orders = [
+        OrderRequest("360750", "BUY", 31, 26_275, "KR"),
+        OrderRequest("390390", "BUY", 16, 48_589, "KR"),
+        OrderRequest("453870", "BUY", 61, 12_899, "KR"),
+        OrderRequest("GRAB", "BUY", 30, 3.56, "US"),
+    ]
+    for request in orders:
+        assert broker.place_order(request).status == "filled"
+
+    positions = broker.get_positions()
+    grab = {position["symbol"]: position for position in positions}["GRAB"]
+
+    assert grab["current_price"] == 3.51
+    assert grab["market_value"] == 105.3
+    assert grab["market_value_krw"] == 157_950
+    assert grab["position_weight_krw"] == 5.77
+    assert grab["position_weight_krw"] < 10
+
+
+def test_us_market_value_krw_does_not_apply_fx_twice(isolated_session) -> None:
+    broker = make_broker(FakeProvider({("US", "GRAB"): 3.51}, fx_rate=1500.0))
+    broker.place_order(
+        OrderRequest(symbol="GRAB", market="US", side="BUY", quantity=30, price=3.56)
+    )
+
+    grab = broker.get_positions()[0]
+
+    assert grab["market_value"] == 105.3
+    assert grab["market_value_krw"] == 157_950
+    assert grab["market_value_krw"] != 236_925_000
+
+
+def test_sample_grab_quote_is_usd_scale() -> None:
+    quote = SampleDataProvider().get_latest_quote("GRAB", "US")
+
+    assert quote.currency == "USD"
+    assert quote.price is not None
+    assert 1.0 <= quote.price <= 10.0
 
 
 def test_delete_position_removes_specific_market_symbol(isolated_session) -> None:

@@ -12,6 +12,14 @@ from src.data_providers.base import BaseDataProvider, FXRate, Quote
 class SampleDataProvider(BaseDataProvider):
     """Deterministic sample data provider for offline MVP usage."""
 
+    US_SAMPLE_BASE_PRICES = {
+        "AAPL": 190.0,
+        "MSFT": 420.0,
+        "NVDA": 120.0,
+        "TSLA": 180.0,
+        "GRAB": 3.6,
+    }
+
     def get_price_history(
         self, symbol: str, market: str = "KR", period: str | int = 180, **kwargs: object
     ) -> pd.DataFrame:
@@ -22,7 +30,7 @@ class SampleDataProvider(BaseDataProvider):
         end = date.today()
         dates = [end - timedelta(days=i) for i in range(days * 2)]
         business_dates = sorted([d for d in dates if d.weekday() < 5])[-days:]
-        base_price = 50_000 if market == "KR" else 150
+        base_price = self._base_price(symbol, market, seed)
         drift = rng.normal(0.0008, 0.018, len(business_dates))
         close = base_price * np.cumprod(1 + drift)
         open_ = close * (1 + rng.normal(0, 0.006, len(close)))
@@ -112,6 +120,15 @@ class SampleDataProvider(BaseDataProvider):
         key = f"{market.upper()}:{symbol.upper()}".encode("utf-8")
         digest = hashlib.sha256(key).hexdigest()
         return int(digest[:16], 16) % (2**32)
+
+    def _base_price(self, symbol: str, market: str, seed: int) -> float:
+        if market == "KR":
+            return 50_000.0
+        symbol = symbol.upper()
+        if symbol in self.US_SAMPLE_BASE_PRICES:
+            return self.US_SAMPLE_BASE_PRICES[symbol]
+        # Keep US sample quotes in USD-scale units instead of KRW-like prices.
+        return 15.0 + (seed % 23_500) / 100.0
 
     def _normalize_period(self, period: str | int, days: object = None) -> int:
         if isinstance(days, int):

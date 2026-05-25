@@ -314,6 +314,10 @@ def main() -> None:
     st.warning(
         "MockBroker 가상 포지션만 분석합니다. 실제 주문 또는 실제 계좌 조회는 없습니다."
     )
+    st.caption(
+        "현재 비중과 리스크·배분 계산은 원화 환산 평가금액 기준입니다. "
+        "US 종목은 USD 현재가에 USD/KRW 환율을 적용합니다."
+    )
 
     profile = st.sidebar.selectbox(
         "리스크 프로필",

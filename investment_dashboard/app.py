@@ -405,6 +405,7 @@ def render_paper_trading_summary(provider: MarketDataProvider) -> None:
             render_metric_card(label, value, tone=tone)
     if summary.get("fx_error_count"):
         st.warning("환율 조회 실패로 일부 US 포지션의 원화 환산 평가가 제한됩니다.")
+    st.caption("통합 포트폴리오 비중은 원화 환산 평가금액 기준입니다.")
 
 
 def render_home_portfolio_charts(provider: MarketDataProvider) -> None:
@@ -420,6 +421,10 @@ def render_home_portfolio_charts(provider: MarketDataProvider) -> None:
         return
     positions["ticker"] = (
         positions["market"].astype(str) + ":" + positions["symbol"].astype(str)
+    )
+    st.caption(
+        "포트폴리오 비중 차트는 원화 환산 평가금액 기준입니다. "
+        "US 종목은 USD 현재가와 USD/KRW 환율을 함께 반영합니다."
     )
     weight_fig = px.pie(
         positions,
