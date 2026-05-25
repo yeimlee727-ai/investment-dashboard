@@ -15,7 +15,9 @@ from src.scoring.portfolio_decision_engine import (
 )
 from src.ui_helpers import (
     build_market_data_provider,
-    localize_columns,
+    format_display_dataframe,
+    format_metric_number,
+    format_reliability_label,
     render_data_warning,
 )
 
@@ -97,27 +99,37 @@ def render_portfolio_summary(result: PortfolioDecisionResult) -> None:
     cols = st.columns(4)
     cols[0].metric(
         "총 평가금액 KRW",
-        f"{float(summary.get('total_market_value_krw', 0)):,.0f}",
+        format_metric_number(summary.get("total_market_value_krw"), 0),
     )
     cols[1].metric(
         "총 매입금액 KRW",
-        f"{float(summary.get('total_cost_basis_krw', 0)):,.0f}",
+        format_metric_number(summary.get("total_cost_basis_krw"), 0),
     )
-    cols[2].metric("총 손익 KRW", f"{float(summary.get('total_pnl_krw', 0)):,.0f}")
+    cols[2].metric("총 손익 KRW", format_metric_number(summary.get("total_pnl_krw"), 0))
     cols[3].metric("보유 종목 수", int(summary.get("position_count", 0)))
     cols = st.columns(4)
-    cols[0].metric("상위 1개 비중", f"{float(summary.get('top1_weight', 0)):.2f}%")
-    cols[1].metric("상위 3개 비중", f"{float(summary.get('top3_weight', 0)):.2f}%")
-    cols[2].metric("데이터 신뢰도", str(summary.get("reliability", "UNKNOWN")))
+    cols[0].metric(
+        "상위 1개 비중",
+        format_metric_number(summary.get("top1_weight"), 2, "%"),
+    )
+    cols[1].metric(
+        "상위 3개 비중",
+        format_metric_number(summary.get("top3_weight"), 2, "%"),
+    )
+    cols[2].metric(
+        "데이터 신뢰도", format_reliability_label(summary.get("reliability"))
+    )
     cols[3].metric(
         "수익/손실 포지션",
         f"{summary.get('profit_position_count', 0)} / {summary.get('loss_position_count', 0)}",
     )
     cols = st.columns(4)
-    cols[0].metric("KR 비중", f"{float(summary.get('kr_weight', 0)):.2f}%")
-    cols[1].metric("US 비중", f"{float(summary.get('us_weight', 0)):.2f}%")
-    cols[2].metric("ETF 비중", f"{float(summary.get('etf_weight', 0)):.2f}%")
-    cols[3].metric("개별주 비중", f"{float(summary.get('stock_weight', 0)):.2f}%")
+    cols[0].metric("KR 비중", format_metric_number(summary.get("kr_weight"), 2, "%"))
+    cols[1].metric("US 비중", format_metric_number(summary.get("us_weight"), 2, "%"))
+    cols[2].metric("ETF 비중", format_metric_number(summary.get("etf_weight"), 2, "%"))
+    cols[3].metric(
+        "개별주 비중", format_metric_number(summary.get("stock_weight"), 2, "%")
+    )
     st.caption(str(summary.get("concentration_comment", "")))
 
 
@@ -127,11 +139,21 @@ def render_decision_tables(frame: pd.DataFrame) -> None:
         return
     display = frame[[col for col in SUMMARY_COLUMNS if col in frame.columns]].copy()
     st.subheader("추가매수 우선순위")
-    buy_view = display.sort_values("additional_buy_score", ascending=False).head(10)
-    st.dataframe(localize_columns(buy_view), hide_index=True, width="stretch")
+    if "additional_buy_score" not in display.columns:
+        st.info("추가매수 우선순위 계산 결과가 없습니다.")
+    else:
+        buy_view = display.sort_values("additional_buy_score", ascending=False).head(10)
+        st.dataframe(
+            format_display_dataframe(buy_view), hide_index=True, width="stretch"
+        )
     st.subheader("매도 검토 신호")
-    sell_view = display.sort_values("sell_review_score", ascending=False).head(10)
-    st.dataframe(localize_columns(sell_view), hide_index=True, width="stretch")
+    if "sell_review_score" not in display.columns:
+        st.info("매도 검토 신호 계산 결과가 없습니다.")
+    else:
+        sell_view = display.sort_values("sell_review_score", ascending=False).head(10)
+        st.dataframe(
+            format_display_dataframe(sell_view), hide_index=True, width="stretch"
+        )
 
 
 def render_flow_analysis(frame: pd.DataFrame) -> None:
@@ -140,27 +162,37 @@ def render_flow_analysis(frame: pd.DataFrame) -> None:
         st.info("표시할 가격 흐름 분석이 없습니다.")
         return
     flow = frame[[col for col in FLOW_COLUMNS if col in frame.columns]].copy()
-    st.dataframe(localize_columns(flow), hide_index=True, width="stretch")
+    st.dataframe(format_display_dataframe(flow), hide_index=True, width="stretch")
 
 
 def render_charts(frame: pd.DataFrame) -> None:
     if frame.empty:
+        st.info("표시할 전략분석 차트 데이터가 없습니다.")
         return
     chart = frame.copy()
     chart["ticker"] = chart["market"] + ":" + chart["symbol"]
-    st.plotly_chart(
-        px.bar(chart, x="ticker", y="additional_buy_score", title="추가매수 점수"),
-        width="stretch",
+    if _has_numeric_data(chart, "additional_buy_score"):
+        st.plotly_chart(
+            px.bar(chart, x="ticker", y="additional_buy_score", title="추가매수 점수"),
+            width="stretch",
+        )
+    if _has_numeric_data(chart, "sell_review_score"):
+        st.plotly_chart(
+            px.bar(chart, x="ticker", y="sell_review_score", title="매도 검토 점수"),
+            width="stretch",
+        )
+    if _has_numeric_data(chart, "mdd"):
+        st.plotly_chart(
+            px.bar(chart, x="ticker", y="mdd", title="종목별 MDD 비교"),
+            width="stretch",
+        )
+    if not {"additional_buy_score", "sell_review_score", "mdd"} & set(chart.columns):
+        st.info("계산 가능한 전략분석 차트 지표가 없습니다.")
+    weight_chart = (
+        chart.dropna(subset=["position_weight_krw"])
+        if "position_weight_krw" in chart.columns
+        else pd.DataFrame()
     )
-    st.plotly_chart(
-        px.bar(chart, x="ticker", y="sell_review_score", title="매도 검토 점수"),
-        width="stretch",
-    )
-    st.plotly_chart(
-        px.bar(chart, x="ticker", y="mdd", title="종목별 MDD 비교"),
-        width="stretch",
-    )
-    weight_chart = chart.dropna(subset=["position_weight_krw"])
     if not weight_chart.empty:
         st.plotly_chart(
             px.pie(
@@ -179,6 +211,9 @@ def render_price_flow_chart(price_history: pd.DataFrame) -> None:
         st.info("표시할 3년 가격 흐름 데이터가 없습니다.")
         return
     chart = price_history.copy()
+    if not _has_numeric_data(chart, "normalized_price"):
+        st.info("가격 흐름 차트를 계산할 수 있는 데이터가 부족합니다.")
+        return
     chart["ticker"] = chart["market"] + ":" + chart["symbol"]
     st.plotly_chart(
         px.line(
@@ -197,7 +232,9 @@ def render_scenarios(result: PortfolioDecisionResult) -> None:
     if result.scenarios.empty:
         st.info("표시할 시나리오가 없습니다.")
         return
-    st.dataframe(localize_columns(result.scenarios), hide_index=True, width="stretch")
+    st.dataframe(
+        format_display_dataframe(result.scenarios), hide_index=True, width="stretch"
+    )
 
 
 def render_comments(result: PortfolioDecisionResult) -> None:
@@ -206,8 +243,8 @@ def render_comments(result: PortfolioDecisionResult) -> None:
         st.info(comment)
     st.subheader("데이터 신뢰도 / 제한사항")
     st.warning(
-        "이 페이지는 의사결정 보조 정보입니다. 매수 추천, 매도 추천, 수익 보장, "
-        "정확한 미래 예측을 제공하지 않습니다."
+        "이 페이지는 의사결정 보조 정보입니다. 직접적인 매수/매도 지시, "
+        "성과 단정, 정확한 미래 예측을 제공하지 않습니다."
     )
     if (
         not result.positions.empty
@@ -216,6 +253,13 @@ def render_comments(result: PortfolioDecisionResult) -> None:
         st.warning(
             "일부 종목은 SAMPLE/FALLBACK 또는 데이터 부족으로 신뢰도가 낮습니다."
         )
+
+
+def _has_numeric_data(frame: pd.DataFrame, column: str) -> bool:
+    if column not in frame.columns:
+        return False
+    values = pd.to_numeric(frame[column], errors="coerce")
+    return values.notna().any()
 
 
 def main() -> None:

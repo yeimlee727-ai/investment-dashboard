@@ -104,6 +104,43 @@ def test_short_data_is_handled_safely() -> None:
     assert row["reliability"] == "UNKNOWN"
 
 
+def test_empty_price_data_is_handled_safely() -> None:
+    engine = PortfolioDecisionEngine()
+    empty = pd.DataFrame(
+        columns=[
+            "date",
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "symbol",
+            "market",
+            "data_source",
+            "provider",
+        ]
+    )
+    empty.attrs["data_source"] = "YFINANCE"
+    empty.attrs["provider"] = "FakeHistoryProvider"
+    provider = FakeHistoryProvider({("AAA", "KR"): empty})
+
+    result = engine.analyze([make_position()], provider)
+    row = result.positions.iloc[0]
+
+    assert row["trend_status"] == "데이터 부족"
+    assert row["reliability"] == "UNKNOWN"
+    assert "분석" in row["reliability_reason"]
+
+
+def test_less_than_three_year_external_data_is_medium_reliability() -> None:
+    engine = PortfolioDecisionEngine()
+    provider = FakeHistoryProvider({("AAA", "KR"): make_history(days=500)})
+
+    result = engine.analyze([make_position()], provider)
+
+    assert result.positions.iloc[0]["reliability"] == "MEDIUM"
+
+
 def test_sample_or_fallback_data_is_low_reliability() -> None:
     engine = PortfolioDecisionEngine()
     provider = FakeHistoryProvider(
@@ -135,6 +172,19 @@ def test_critical_disclosure_increases_sell_review_score() -> None:
     assert result.positions.iloc[0]["sell_review_score"] >= 60
 
 
+def test_low_reliability_penalizes_additional_buy_score() -> None:
+    engine = PortfolioDecisionEngine()
+    real_provider = FakeHistoryProvider({("AAA", "KR"): make_history()})
+    sample_provider = FakeHistoryProvider(
+        {("AAA", "KR"): make_history(data_source="SAMPLE_FALLBACK")}
+    )
+
+    real = engine.analyze([make_position()], real_provider).positions.iloc[0]
+    sample = engine.analyze([make_position()], sample_provider).positions.iloc[0]
+
+    assert sample["additional_buy_score"] < real["additional_buy_score"]
+
+
 def test_high_position_weight_increases_sell_review_score() -> None:
     engine = PortfolioDecisionEngine()
     provider = FakeHistoryProvider({("AAA", "KR"): make_history()})
@@ -153,11 +203,29 @@ def test_krw_weight_affects_additional_buy_priority() -> None:
     high_weight = engine.analyze([make_position(weight=45)], provider).positions.iloc[0]
 
     assert low_weight["additional_buy_score"] > high_weight["additional_buy_score"]
+    assert high_weight["additional_buy_score"] <= 70
 
 
 def test_result_has_no_nan_or_inf_values() -> None:
     engine = PortfolioDecisionEngine()
     provider = FakeHistoryProvider({("AAA", "KR"): make_history()})
+
+    result = engine.analyze([make_position()], provider)
+
+    for value in result.positions.iloc[0].to_dict().values():
+        if isinstance(value, float):
+            assert not math.isnan(value)
+            assert not math.isinf(value)
+
+
+def test_nan_or_inf_history_values_do_not_leak_to_result() -> None:
+    engine = PortfolioDecisionEngine()
+    history = make_history()
+    history.loc[100, "close"] = np.nan
+    history.loc[200, "high"] = np.inf
+    history.loc[300, "volume"] = np.nan
+    history.loc[len(history) - 1, "close"] = np.inf
+    provider = FakeHistoryProvider({("AAA", "KR"): history})
 
     result = engine.analyze([make_position()], provider)
 
