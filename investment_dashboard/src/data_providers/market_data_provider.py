@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src.data_providers.base import BaseDataProvider, DataMode, Quote
+from src.data_providers.base import BaseDataProvider, DataMode, FXRate, Quote
 from src.data_providers.external_market_data_provider import ExternalMarketDataProvider
 from src.data_providers.sample_provider import SampleDataProvider
 
@@ -93,6 +93,34 @@ class MarketDataProvider(BaseDataProvider):
 
     def is_fallback_mode(self) -> bool:
         return self.last_data_source == "SAMPLE_FALLBACK"
+
+    def get_fx_rate(self, pair: str = "USD/KRW") -> FXRate:
+        if self.mode == "SAMPLE":
+            fx = self.sample_provider.get_fx_rate(pair)
+            self.last_data_source = fx.data_source
+            self.last_error = fx.error
+            return fx
+
+        fx = self.real_provider.get_fx_rate(pair)
+        if fx.rate is not None and fx.error is None:
+            self.last_data_source = fx.data_source
+            self.last_error = None
+            return fx
+
+        self.last_error = fx.error or "실제 환율 조회 실패"
+        fallback = self.sample_provider.get_fx_rate(pair)
+        if fallback.rate is None:
+            self.last_data_source = fallback.data_source
+            return fallback
+        self.last_data_source = "SAMPLE_FX_FALLBACK"
+        return FXRate(
+            pair=fallback.pair,
+            rate=fallback.rate,
+            data_source="SAMPLE_FX_FALLBACK",
+            provider=self.get_provider_name(),
+            as_of=fallback.as_of,
+            error=self.last_error,
+        )
 
     def _sample_history(
         self, symbol: str, market: str, period: str | int, **kwargs: object

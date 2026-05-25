@@ -83,3 +83,43 @@ def test_portfolio_risk_metrics() -> None:
     assert metrics["unrealized_profit_total"] == 50
     assert metrics["daily_realized_pnl"] == -25
     assert metrics["daily_loss_usage_pct"] == 25
+
+
+def test_portfolio_risk_metrics_use_krw_valuation_when_available() -> None:
+    positions = [
+        {
+            "market_value": 100,
+            "market_value_krw": 100,
+            "unrealized_pnl": 10,
+            "unrealized_pnl_krw": 10,
+        },
+        {
+            "market_value": 1,
+            "market_value_krw": 900,
+            "unrealized_pnl": -1,
+            "unrealized_pnl_krw": -100,
+        },
+    ]
+
+    metrics = RiskEngine().portfolio_risk_metrics(positions)
+
+    assert metrics["top1_weight"] == 90
+    assert metrics["top3_weight"] == 100
+    assert metrics["unrealized_loss_total"] == -100
+
+
+def test_portfolio_risk_metrics_ignore_missing_fx_valuation_safely() -> None:
+    positions = [
+        {"market_value": 100, "market_value_krw": 100, "unrealized_pnl_krw": 10},
+        {
+            "market_value": 1,
+            "market_value_krw": None,
+            "unrealized_pnl_krw": None,
+            "fx_error": "fx unavailable",
+        },
+    ]
+
+    metrics = RiskEngine().portfolio_risk_metrics(positions)
+
+    assert metrics["top1_weight"] == 100
+    assert metrics["loss_position_count"] == 0

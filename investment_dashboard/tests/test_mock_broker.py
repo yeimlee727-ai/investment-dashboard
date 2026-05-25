@@ -7,19 +7,37 @@ from sqlalchemy import select
 
 from src.broker.base import OrderRequest
 from src.broker.mock_broker import MockBroker
+from src.data_providers.base import FXRate
 from src.models import RealizedPnlLog, VirtualOrder, VirtualPosition
 from src.risk.risk_engine import RiskConfig, RiskEngine
 
 
 class FakeProvider:
-    def __init__(self, prices: dict[tuple[str, str], float] | None = None) -> None:
+    def __init__(
+        self,
+        prices: dict[tuple[str, str], float] | None = None,
+        fx_rate: float | None = 1300.0,
+        fx_error: str | None = None,
+    ) -> None:
         self.prices = prices or {}
+        self.fx_rate = fx_rate
+        self.fx_error = fx_error
 
     def get_quote(self, symbol: str, market: str = "KR") -> dict[str, float | str]:
         key = (market, symbol)
         if key not in self.prices:
             raise RuntimeError("missing quote")
         return {"symbol": symbol, "market": market, "price": self.prices[key]}
+
+    def get_fx_rate(self, pair: str = "USD/KRW") -> FXRate:
+        return FXRate(
+            pair=pair,
+            rate=self.fx_rate,
+            data_source="TEST_FX" if self.fx_rate is not None else "TEST_FX_ERROR",
+            provider="FakeProvider",
+            as_of="2026-01-02T00:00:00",
+            error=self.fx_error,
+        )
 
 
 def make_broker(provider: FakeProvider | None = None) -> MockBroker:
@@ -116,6 +134,7 @@ def test_market_specific_position_quotes_and_overrides(isolated_session) -> None
     assert by_symbol["AAPL"]["current_price"] == 210
     assert by_symbol["AAPL"]["market_value"] == 420
     assert by_symbol["AAPL"]["quote_error"] is None
+    assert by_symbol["AAPL"]["market_value_krw"] == 546_000
 
 
 def test_quote_failure_returns_none_and_quote_error(isolated_session) -> None:
@@ -146,7 +165,43 @@ def test_position_profit_report_fields_are_calculated(isolated_session) -> None:
     assert position["total_pnl"] == 2_000
     assert position["total_pnl_pct"] == 20
     assert position["position_weight"] == 100
+    assert position["fx_rate"] == 1
+    assert position["market_value_krw"] == 12_000
+    assert position["position_weight_krw"] == 100
     assert position["updated_at"] is not None
+
+
+def test_us_position_uses_fx_for_krw_values(isolated_session) -> None:
+    broker = make_broker(FakeProvider({("US", "GRAB"): 4.0}, fx_rate=1400.0))
+    broker.place_order(
+        OrderRequest(symbol="GRAB", market="US", side="BUY", quantity=100, price=3.0)
+    )
+
+    position = broker.get_positions()[0]
+
+    assert position["currency"] == "USD"
+    assert position["market_value"] == 400
+    assert position["market_value_krw"] == 560_000
+    assert position["cost_basis_krw"] == 420_000
+    assert position["unrealized_pnl_krw"] == 140_000
+    assert position["fx_data_source"] == "TEST_FX"
+    assert position["fx_error"] is None
+
+
+def test_us_position_without_fx_keeps_krw_values_empty(isolated_session) -> None:
+    broker = make_broker(
+        FakeProvider({("US", "GRAB"): 4.0}, fx_rate=None, fx_error="fx unavailable")
+    )
+    broker.place_order(
+        OrderRequest(symbol="GRAB", market="US", side="BUY", quantity=100, price=3.0)
+    )
+
+    position = broker.get_positions()[0]
+
+    assert position["market_value"] == 400
+    assert position["market_value_krw"] is None
+    assert position["total_pnl_krw"] is None
+    assert position["fx_error"] == "fx unavailable"
 
 
 def test_portfolio_summary_excludes_quote_errors_from_market_value(
@@ -166,6 +221,26 @@ def test_portfolio_summary_excludes_quote_errors_from_market_value(
     assert summary["total_cost_basis"] == 15_000
     assert summary["total_unrealized_pnl"] == 2_000
     assert summary["quote_error_count"] == 1
+
+
+def test_position_weight_krw_uses_fx_converted_total(isolated_session) -> None:
+    broker = make_broker(
+        FakeProvider({("KR", "005930"): 1000, ("US", "GRAB"): 10}, fx_rate=1000)
+    )
+    broker.place_order(
+        OrderRequest(symbol="005930", market="KR", side="BUY", quantity=10, price=1000)
+    )
+    broker.place_order(
+        OrderRequest(symbol="GRAB", market="US", side="BUY", quantity=1, price=10)
+    )
+
+    positions = broker.get_positions()
+    by_symbol = {position["symbol"]: position for position in positions}
+
+    assert by_symbol["005930"]["market_value_krw"] == 10_000
+    assert by_symbol["GRAB"]["market_value_krw"] == 10_000
+    assert by_symbol["005930"]["position_weight_krw"] == 50
+    assert by_symbol["GRAB"]["position_weight_krw"] == 50
 
 
 def test_order_and_realized_pnl_reports_include_required_columns(

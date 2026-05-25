@@ -7,6 +7,7 @@ from src.ui_helpers import (
     format_profit_factor,
     get_backtest_warning_messages,
     get_data_mode_status,
+    get_fx_status_message,
 )
 
 
@@ -38,6 +39,12 @@ def test_backtest_low_trade_warning_message() -> None:
 def test_profit_factor_no_loss_display() -> None:
     assert format_profit_factor(999.0) == "999+ (손실 거래 없음)"
     assert format_avg_profit_loss_ratio(0.0, 999.0) == "N/A (손실 거래 없음)"
+
+
+def test_fx_status_messages() -> None:
+    assert "1,350.00" in get_fx_status_message(1350.0, "SAMPLE_FX", None)
+    assert "제한" in get_fx_status_message(None, "REAL_FX_ERROR", "network")
+    assert "오류" in get_fx_status_message(1350.0, "SAMPLE_FX_FALLBACK", "network")
 
 
 def test_app_import_smoke() -> None:

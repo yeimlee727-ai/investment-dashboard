@@ -67,6 +67,19 @@ def get_backtest_warning_messages(
     return messages
 
 
+def get_fx_status_message(
+    rate: float | None, data_source: str, error: str | None
+) -> str:
+    if rate is None:
+        return "환율 조회 실패로 US 종목의 원화 환산 평가가 제한됩니다."
+    if error:
+        return (
+            f"USD/KRW {rate:,.2f}을 사용합니다. "
+            f"{data_source} 기준이며 외부 환율 조회 오류가 있었습니다: {error}"
+        )
+    return f"USD/KRW {rate:,.2f}을 사용합니다. 출처: {data_source}"
+
+
 def select_data_mode() -> DataMode:
     selected = st.sidebar.radio(
         "데이터 모드",

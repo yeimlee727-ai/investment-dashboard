@@ -107,9 +107,12 @@ class MockBroker(Broker):
             )
 
     def get_positions(
-        self, current_prices: dict[str, float] | None = None
-    ) -> list[dict[str, float | int | str | None]]:
+        self,
+        current_prices: dict[str, float] | None = None,
+        manual_fx_rate: float | None = None,
+    ) -> list[dict[str, float | int | str | datetime | None]]:
         current_prices = current_prices or {}
+        fx_rate, fx_source, fx_error, fx_as_of = self._get_usd_krw_fx(manual_fx_rate)
         with get_session() as session:
             positions = (
                 session.execute(
@@ -118,7 +121,7 @@ class MockBroker(Broker):
                 .scalars()
                 .all()
             )
-            rows: list[dict[str, float | int | str | None]] = []
+            rows: list[dict[str, float | int | str | datetime | None]] = []
             for p in positions:
                 price_key = f"{p.market}:{p.symbol}"
                 override_price = current_prices.get(price_key) or current_prices.get(
@@ -156,10 +159,20 @@ class MockBroker(Broker):
                     if current_price is not None and cost_basis
                     else None
                 )
+                currency = "KRW" if p.market == "KR" else "USD"
+                position_fx_rate = 1.0 if p.market == "KR" else fx_rate
+                position_fx_source = "KRW" if p.market == "KR" else fx_source
+                position_fx_error = None if p.market == "KR" else fx_error
+                market_value_krw = self._to_krw(market_value, position_fx_rate)
+                cost_basis_krw = self._to_krw(cost_basis, position_fx_rate)
+                unrealized_pnl_krw = self._to_krw(unrealized_pnl, position_fx_rate)
+                realized_pnl_krw = self._to_krw(p.realized_pnl, position_fx_rate)
+                total_pnl_krw = self._to_krw(total_pnl, position_fx_rate)
                 rows.append(
                     {
                         "market": p.market,
                         "symbol": p.symbol,
+                        "currency": currency,
                         "quantity": p.quantity,
                         "avg_price": round(p.avg_price, 2),
                         "current_price": (
@@ -195,66 +208,120 @@ class MockBroker(Broker):
                             else None
                         ),
                         "position_weight": None,
+                        "fx_rate": (
+                            round(position_fx_rate, 4)
+                            if position_fx_rate is not None
+                            else None
+                        ),
+                        "market_value_krw": self._round_optional(market_value_krw),
+                        "cost_basis_krw": self._round_optional(cost_basis_krw),
+                        "unrealized_pnl_krw": self._round_optional(unrealized_pnl_krw),
+                        "realized_pnl_krw": self._round_optional(realized_pnl_krw),
+                        "total_pnl_krw": self._round_optional(total_pnl_krw),
+                        "position_weight_krw": None,
+                        "fx_data_source": position_fx_source,
+                        "fx_error": position_fx_error,
+                        "fx_as_of": fx_as_of if p.market == "US" else None,
                         "updated_at": p.updated_at,
                     }
                 )
-            total_market_value = sum(
-                float(row["market_value"])
+            total_market_value_krw = sum(
+                float(row["market_value_krw"])
                 for row in rows
-                if row.get("market_value") is not None
+                if row.get("market_value_krw") is not None
             )
             for row in rows:
-                market_value = row.get("market_value")
-                row["position_weight"] = (
-                    round(float(market_value) / total_market_value * 100, 2)
-                    if market_value is not None and total_market_value
+                market_value_krw = row.get("market_value_krw")
+                row["position_weight_krw"] = (
+                    round(float(market_value_krw) / total_market_value_krw * 100, 2)
+                    if market_value_krw is not None and total_market_value_krw
                     else None
                 )
+                row["position_weight"] = row["position_weight_krw"]
             return rows
 
     def get_portfolio_summary(
-        self, current_prices: dict[str, float] | None = None
+        self,
+        current_prices: dict[str, float] | None = None,
+        manual_fx_rate: float | None = None,
     ) -> dict[str, float | int | str | None]:
-        positions = self.get_positions(current_prices=current_prices)
+        positions = self.get_positions(
+            current_prices=current_prices, manual_fx_rate=manual_fx_rate
+        )
         valued_positions = [
             position
             for position in positions
-            if position.get("market_value") is not None
-            and position.get("unrealized_pnl") is not None
+            if position.get("market_value_krw") is not None
+            and position.get("unrealized_pnl_krw") is not None
         ]
-        total_market_value = sum(float(p["market_value"]) for p in valued_positions)
-        total_cost_basis = sum(float(p["cost_basis"]) for p in positions)
-        total_unrealized_pnl = sum(float(p["unrealized_pnl"]) for p in valued_positions)
-        total_realized_pnl = sum(float(p["realized_pnl"]) for p in positions)
+        total_market_value = sum(float(p["market_value_krw"]) for p in valued_positions)
+        total_cost_basis = sum(
+            float(p["cost_basis_krw"])
+            for p in positions
+            if p.get("cost_basis_krw") is not None
+        )
+        total_unrealized_pnl = sum(
+            float(p["unrealized_pnl_krw"]) for p in valued_positions
+        )
+        total_realized_pnl = sum(
+            float(p["realized_pnl_krw"])
+            for p in positions
+            if p.get("realized_pnl_krw") is not None
+        )
         total_pnl = total_unrealized_pnl + total_realized_pnl
         max_loss = min(
             valued_positions,
-            key=lambda item: float(item.get("total_pnl") or 0),
+            key=lambda item: float(item.get("total_pnl_krw") or 0),
             default=None,
         )
         max_profit = max(
             valued_positions,
-            key=lambda item: float(item.get("total_pnl") or 0),
+            key=lambda item: float(item.get("total_pnl_krw") or 0),
             default=None,
         )
+        fx_rows = [p for p in positions if p.get("market") == "US"]
+        fx_errors = [str(p["fx_error"]) for p in fx_rows if p.get("fx_error")]
+        if fx_rows:
+            fx_rate = next(
+                (p.get("fx_rate") for p in fx_rows if p.get("fx_rate")), None
+            )
+            fx_source = next(
+                (p.get("fx_data_source") for p in fx_rows if p.get("fx_data_source")),
+                "",
+            )
+        else:
+            fx_rate, fx_source, _, _ = self._get_usd_krw_fx(manual_fx_rate)
         return {
             "total_market_value": round(total_market_value, 2),
+            "total_market_value_krw": round(total_market_value, 2),
             "total_cost_basis": round(total_cost_basis, 2),
+            "total_cost_basis_krw": round(total_cost_basis, 2),
             "total_unrealized_pnl": round(total_unrealized_pnl, 2),
+            "total_unrealized_pnl_krw": round(total_unrealized_pnl, 2),
             "total_unrealized_pnl_pct": (
                 round(total_unrealized_pnl / total_cost_basis * 100, 2)
                 if total_cost_basis
                 else 0.0
             ),
             "total_realized_pnl": round(total_realized_pnl, 2),
+            "total_realized_pnl_krw": round(total_realized_pnl, 2),
             "total_pnl": round(total_pnl, 2),
+            "total_pnl_krw": round(total_pnl, 2),
             "position_count": len(positions),
             "cash_balance": None,
             "top1_weight": max(
                 [
-                    float(p["position_weight"])
+                    float(p["position_weight_krw"])
                     for p in positions
-                    if p["position_weight"]
+                    if p.get("position_weight_krw")
+                ],
+                default=0.0,
+            ),
+            "top1_weight_krw": max(
+                [
+                    float(p["position_weight_krw"])
+                    for p in positions
+                    if p.get("position_weight_krw")
                 ],
                 default=0.0,
             ),
@@ -265,6 +332,10 @@ class MockBroker(Broker):
                 f"{max_profit['market']}:{max_profit['symbol']}" if max_profit else ""
             ),
             "quote_error_count": sum(1 for p in positions if p.get("quote_error")),
+            "fx_rate": fx_rate,
+            "fx_data_source": fx_source,
+            "fx_error_count": len(fx_errors),
+            "fx_error": "; ".join(fx_errors),
         }
 
     def get_order_logs(self) -> list[dict[str, float | int | str | datetime | None]]:
@@ -423,6 +494,37 @@ class MockBroker(Broker):
             return float(price), None
         except Exception as exc:
             return None, f"현재가 조회 실패: {exc}"
+
+    def _get_usd_krw_fx(
+        self, manual_fx_rate: float | None = None
+    ) -> tuple[float | None, str, str | None, str | datetime | None]:
+        if manual_fx_rate is not None and manual_fx_rate > 0:
+            return (
+                manual_fx_rate,
+                "MANUAL",
+                None,
+                datetime.now().isoformat(timespec="seconds"),
+            )
+        try:
+            if hasattr(self.data_provider, "get_fx_rate"):
+                fx = self.data_provider.get_fx_rate("USD/KRW")
+                return fx.rate, fx.data_source, fx.error, fx.as_of
+            return (
+                None,
+                "FX_UNAVAILABLE",
+                "환율 조회를 지원하지 않는 provider입니다.",
+                None,
+            )
+        except Exception as exc:
+            return None, "FX_ERROR", f"환율 조회 실패: {exc}", None
+
+    def _to_krw(self, value: float | None, fx_rate: float | None) -> float | None:
+        if value is None or fx_rate is None:
+            return None
+        return value * fx_rate
+
+    def _round_optional(self, value: float | None) -> float | None:
+        return round(value, 2) if value is not None else None
 
     def _get_daily_realized_pnl(self, session: Session) -> float:
         seoul_now = datetime.now(ZoneInfo("Asia/Seoul"))

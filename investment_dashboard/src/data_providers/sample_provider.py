@@ -6,7 +6,7 @@ import hashlib
 import numpy as np
 import pandas as pd
 
-from src.data_providers.base import BaseDataProvider, Quote
+from src.data_providers.base import BaseDataProvider, FXRate, Quote
 
 
 class SampleDataProvider(BaseDataProvider):
@@ -88,6 +88,25 @@ class SampleDataProvider(BaseDataProvider):
 
     def is_sample_mode(self) -> bool:
         return True
+
+    def get_fx_rate(self, pair: str = "USD/KRW") -> FXRate:
+        if pair.upper() != "USD/KRW":
+            return FXRate(
+                pair=pair.upper(),
+                rate=None,
+                data_source="SAMPLE_FX_UNSUPPORTED",
+                provider=self.get_provider_name(),
+                as_of=datetime.now().isoformat(timespec="seconds"),
+                error="샘플 provider는 USD/KRW만 지원합니다.",
+            )
+        return FXRate(
+            pair="USD/KRW",
+            rate=1350.0,
+            data_source="SAMPLE_FX",
+            provider=self.get_provider_name(),
+            as_of=datetime.now().isoformat(timespec="seconds"),
+            error=None,
+        )
 
     def _seed_for(self, symbol: str, market: str) -> int:
         key = f"{market.upper()}:{symbol.upper()}".encode("utf-8")

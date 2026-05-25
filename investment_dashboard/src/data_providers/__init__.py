@@ -1,6 +1,12 @@
 """Market data provider adapters."""
 
-from src.data_providers.base import BaseDataProvider, DataMode, DataProvider, Quote
+from src.data_providers.base import (
+    BaseDataProvider,
+    DataMode,
+    DataProvider,
+    FXRate,
+    Quote,
+)
 from src.data_providers.external_market_data_provider import (
     ExternalMarketDataProvider,
     RealMarketDataProvider,
@@ -13,6 +19,7 @@ __all__ = [
     "DataMode",
     "DataProvider",
     "ExternalMarketDataProvider",
+    "FXRate",
     "MarketDataProvider",
     "Quote",
     "RealMarketDataProvider",
