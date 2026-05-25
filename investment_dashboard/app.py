@@ -18,13 +18,20 @@ from src.scanner.stock_scanner import StockScanner
 from src.scoring.portfolio_decision_engine import PortfolioDecisionEngine
 from src.scoring.scoring_engine import ScoringEngine
 from src.ui_helpers import (
+    apply_plotly_dark_theme,
     build_market_data_provider,
     format_display_dataframe,
     format_metric_number,
     format_reliability_label,
     get_data_mode_status,
+    inject_global_css,
     localize_columns,
+    render_alert,
     render_data_warning,
+    render_metric_card,
+    render_page_header,
+    safe_krw,
+    safe_percent,
 )
 
 STRATEGIES = ["EMA20 상향 돌파 + 거래량 증가", "RSI 30 이하 반등", "신고가 돌파"]
@@ -46,17 +53,8 @@ PAGE_GUIDE = [
 
 
 def apply_theme() -> None:
-    st.set_page_config(page_title="Investment Dashboard", layout="wide", page_icon="📈")
-    st.markdown(
-        """
-        <style>
-        .stApp { background: #0f1117; color: #f4f6fb; }
-        [data-testid="stMetricValue"] { color: #f4f6fb; }
-        .block-container { padding-top: 1.5rem; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    st.set_page_config(page_title="Investment Dashboard", layout="wide")
+    inject_global_css()
 
 
 def ensure_seed_watchlist() -> None:
@@ -188,13 +186,18 @@ def render_data_mode_section(provider: MarketDataProvider) -> None:
     )
     st.subheader("데이터 모드 상태")
     cols = st.columns(3)
-    cols[0].metric("현재 모드", badge)
-    cols[1].metric("Provider", provider.get_provider_name())
-    cols[2].metric("마지막 데이터 출처", provider.last_data_source)
+    with cols[0]:
+        render_metric_card(
+            "현재 모드", badge, tone="info" if level == "info" else "warning"
+        )
+    with cols[1]:
+        render_metric_card("Provider", provider.get_provider_name())
+    with cols[2]:
+        render_metric_card("마지막 데이터 출처", provider.last_data_source)
     if level == "info":
-        st.info(f"{badge}: {message}")
+        render_alert(f"{badge}: {message}", "info")
     else:
-        st.warning(f"{badge}: {message}")
+        render_alert(f"{badge}: {message}", "warning")
     if provider.last_error:
         st.caption(f"최근 조회 메시지: {provider.last_error}")
 
@@ -202,11 +205,16 @@ def render_data_mode_section(provider: MarketDataProvider) -> None:
 def render_safety_status() -> None:
     st.subheader("시스템 안전 상태")
     cols = st.columns(5)
-    cols[0].metric("실제 주문 기능", "없음")
-    cols[1].metric("TossBroker", "Placeholder")
-    cols[2].metric("MockBroker", "가상 주문")
-    cols[3].metric("실제 계좌 조회", "없음")
-    cols[4].metric("API Key 화면 노출", "없음")
+    metrics = [
+        ("실제 주문 기능", "없음", "success"),
+        ("TossBroker", "Placeholder", "neutral"),
+        ("MockBroker", "가상 주문", "info"),
+        ("실제 계좌 조회", "없음", "success"),
+        ("API Key 화면 노출", "없음", "success"),
+    ]
+    for col, (label, value, tone) in zip(cols, metrics, strict=True):
+        with col:
+            render_metric_card(label, value, tone=tone)
     st.caption(
         "이 카드는 시스템 동작 상태를 설명합니다. 투자 판단이나 주문 신호를 의미하지 않습니다."
     )
@@ -220,12 +228,17 @@ def render_watchlist_summary(
         st.info("관심종목이 없습니다. 관심종목 페이지에서 종목을 추가하세요.")
         return
     cols = st.columns(6)
-    cols[0].metric("관심종목 수", summary["total"])
-    cols[1].metric("KR 종목", summary["kr_count"])
-    cols[2].metric("US 종목", summary["us_count"])
-    cols[3].metric("조회 성공", summary["quote_success_count"])
-    cols[4].metric("Fallback", summary["fallback_count"])
-    cols[5].metric("Quote error", summary["quote_error_count"])
+    metrics = [
+        ("관심종목 수", summary["total"], "neutral"),
+        ("KR 종목", summary["kr_count"], "neutral"),
+        ("US 종목", summary["us_count"], "neutral"),
+        ("조회 성공", summary["quote_success_count"], "success"),
+        ("Fallback", summary["fallback_count"], "warning"),
+        ("Quote error", summary["quote_error_count"], "danger"),
+    ]
+    for col, (label, value, tone) in zip(cols, metrics, strict=True):
+        with col:
+            render_metric_card(label, value, tone=tone)
 
 
 def render_scanner_summary(scored: pd.DataFrame) -> None:
@@ -259,7 +272,7 @@ def render_scanner_summary(scored: pd.DataFrame) -> None:
         orientation="h",
         title="상위 종목 점수",
     )
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(apply_plotly_dark_theme(fig), width="stretch")
     st.caption("점수는 스캐너 요약 지표이며 매수/매도 실행 지시가 아닙니다.")
 
 
@@ -309,10 +322,19 @@ def render_backtest_summary() -> None:
     latest = st.session_state.get("latest_backtest_result")
     if latest:
         cols = st.columns(4)
-        cols[0].metric("총수익률", f"{latest.get('total_return', 0):.2f}%")
-        cols[1].metric("MDD", f"{latest.get('mdd', 0):.2f}%")
-        cols[2].metric("승률", f"{latest.get('win_rate', 0):.2f}%")
-        cols[3].metric("Profit factor", f"{latest.get('profit_factor', 0):.2f}")
+        metrics = [
+            ("총수익률", safe_percent(latest.get("total_return")), "positive"),
+            ("MDD", safe_percent(latest.get("mdd")), "warning"),
+            ("승률", safe_percent(latest.get("win_rate")), "info"),
+            (
+                "Profit factor",
+                format_metric_number(latest.get("profit_factor"), 2),
+                "neutral",
+            ),
+        ]
+        for col, (label, value, tone) in zip(cols, metrics, strict=True):
+            with col:
+                render_metric_card(label, value, tone=tone)
     else:
         st.info("최근 백테스트 결과가 없습니다. 백테스트 페이지에서 전략을 실행하세요.")
     st.write("사용 가능한 전략")
@@ -364,31 +386,57 @@ def render_paper_trading_summary(provider: MarketDataProvider) -> None:
         )
         return
     cols = st.columns(8)
-    cols[0].metric("보유 종목 수", int(summary.get("position_count") or 0))
-    cols[1].metric(
-        "총 평가금액 KRW",
-        f"{float(summary.get('total_market_value_krw') or 0):,.0f}",
-    )
-    cols[2].metric(
-        "총 매입금액 KRW",
-        f"{float(summary.get('total_cost_basis_krw') or 0):,.0f}",
-    )
-    cols[3].metric(
-        "총 손익 KRW",
-        f"{float(summary.get('total_pnl_krw') or 0):,.0f}",
-    )
-    cols[4].metric(
-        "상위 1개 비중 KRW",
-        f"{float(summary.get('top1_weight_krw') or 0):.2f}%",
-    )
-    cols[5].metric("Quote error", int(summary.get("quote_error_count") or 0))
-    cols[6].metric("FX error", int(summary.get("fx_error_count") or 0))
-    cols[7].metric(
-        "USD/KRW",
-        f"{float(summary['fx_rate']):,.2f}" if summary.get("fx_rate") else "-",
-    )
+    metrics = [
+        ("보유 종목 수", int(summary.get("position_count") or 0), "neutral"),
+        ("총 평가금액 KRW", safe_krw(summary.get("total_market_value_krw")), "info"),
+        ("총 매입금액 KRW", safe_krw(summary.get("total_cost_basis_krw")), "neutral"),
+        ("총 손익 KRW", safe_krw(summary.get("total_pnl_krw")), "positive"),
+        ("상위 1개 비중 KRW", safe_percent(summary.get("top1_weight_krw")), "warning"),
+        ("Quote error", int(summary.get("quote_error_count") or 0), "danger"),
+        ("FX error", int(summary.get("fx_error_count") or 0), "danger"),
+        (
+            "USD/KRW",
+            format_metric_number(summary.get("fx_rate"), 2, unavailable="-"),
+            "neutral",
+        ),
+    ]
+    for col, (label, value, tone) in zip(cols, metrics, strict=True):
+        with col:
+            render_metric_card(label, value, tone=tone)
     if summary.get("fx_error_count"):
         st.warning("환율 조회 실패로 일부 US 포지션의 원화 환산 평가가 제한됩니다.")
+
+
+def render_home_portfolio_charts(provider: MarketDataProvider) -> None:
+    st.subheader("포트폴리오 차트")
+    broker = MockBroker(data_provider=provider)
+    positions = pd.DataFrame(broker.get_positions())
+    if positions.empty or "market_value_krw" not in positions.columns:
+        st.info("표시할 모의매매 포트폴리오 차트 데이터가 없습니다.")
+        return
+    positions = positions.dropna(subset=["market_value_krw"]).copy()
+    if positions.empty:
+        st.warning("현재가 또는 환율 조회 실패로 포트폴리오 차트를 표시할 수 없습니다.")
+        return
+    positions["ticker"] = (
+        positions["market"].astype(str) + ":" + positions["symbol"].astype(str)
+    )
+    weight_fig = px.pie(
+        positions,
+        names="ticker",
+        values="market_value_krw",
+        title="포트폴리오 비중(원화 기준)",
+        hole=0.45,
+    )
+    st.plotly_chart(apply_plotly_dark_theme(weight_fig), width="stretch")
+    if "total_pnl_krw" in positions.columns:
+        pnl_fig = px.bar(
+            positions.sort_values("total_pnl_krw"),
+            x="ticker",
+            y="total_pnl_krw",
+            title="종목별 총손익(원화 기준)",
+        )
+        st.plotly_chart(apply_plotly_dark_theme(pnl_fig), width="stretch")
 
 
 def render_portfolio_decision_summary(provider: MarketDataProvider) -> None:
@@ -517,6 +565,25 @@ def render_rebalancing_summary(provider: MarketDataProvider) -> None:
     st.caption("자세히 보기: 리스크·리밸런싱 분석 페이지")
 
 
+def render_home_kpi_strip(provider: MarketDataProvider) -> None:
+    broker = MockBroker(data_provider=provider)
+    summary = broker.get_portfolio_summary()
+    cols = st.columns(8)
+    metrics = [
+        ("총 평가금액", safe_krw(summary.get("total_market_value_krw")), "info"),
+        ("총 매입금액", safe_krw(summary.get("total_cost_basis_krw")), "neutral"),
+        ("총 손익", safe_krw(summary.get("total_pnl_krw")), "positive"),
+        ("총 손익률", safe_percent(summary.get("total_pnl_pct")), "positive"),
+        ("보유 종목 수", int(summary.get("position_count") or 0), "neutral"),
+        ("상위 1개 비중", safe_percent(summary.get("top1_weight_krw")), "warning"),
+        ("현재가 오류", int(summary.get("quote_error_count") or 0), "danger"),
+        ("환율 오류", int(summary.get("fx_error_count") or 0), "danger"),
+    ]
+    for col, (label, value, tone) in zip(cols, metrics, strict=True):
+        with col:
+            render_metric_card(label, value, tone=tone)
+
+
 def render_navigation_guide() -> None:
     st.subheader("페이지 이동 안내")
     st.caption("왼쪽 사이드바의 Pages 메뉴에서 각 기능 페이지로 이동할 수 있습니다.")
@@ -532,11 +599,17 @@ def main() -> None:
     init_db()
     ensure_seed_watchlist()
 
-    st.title("개인용 투자 대시보드")
-    st.caption(
-        "실제 주문 없이 데이터 조회, 스캐너, 공시, 백테스트, 모의매매 상태를 요약하는 MVP입니다."
-    )
     provider = build_market_data_provider()
+    badge, _, level = get_data_mode_status(provider.mode, provider.is_fallback_mode())
+    render_page_header(
+        "개인용 투자 대시보드",
+        "실제 주문 없이 데이터 조회, 스캐너, 공시, 백테스트, 모의매매 상태를 한 화면에서 점검합니다.",
+        badges=[
+            (badge, "info" if level == "info" else "warning"),
+            ("실제 주문 없음", "success"),
+            ("MockBroker 가상 주문", "info"),
+        ],
+    )
     render_data_warning(provider)
 
     watchlist = load_watchlist()
@@ -555,6 +628,7 @@ def main() -> None:
 
     render_data_mode_section(provider)
     render_safety_status()
+    render_home_kpi_strip(provider)
 
     render_watchlist_summary(summarize_watchlist(watchlist, quotes), watchlist)
     left, right = st.columns([1.5, 1])
@@ -569,6 +643,7 @@ def main() -> None:
     with right:
         render_paper_trading_summary(provider)
 
+    render_home_portfolio_charts(provider)
     render_portfolio_decision_summary(provider)
     render_rebalancing_summary(provider)
     render_navigation_guide()

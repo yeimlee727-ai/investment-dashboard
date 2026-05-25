@@ -11,13 +11,17 @@ from src.models import WatchlistItem
 from src.risk.rebalancing_engine import PROFILE_TARGETS, RebalancingEngine
 from src.scoring.portfolio_decision_engine import PortfolioDecisionEngine
 from src.ui_helpers import (
+    apply_plotly_dark_theme,
     build_market_data_provider,
     format_display_dataframe,
     format_metric_number,
     format_reliability_label,
     get_allocation_notice,
     get_stress_test_notice,
+    inject_global_css,
     render_data_warning,
+    render_metric_card,
+    render_page_header,
 )
 
 RISK_COLUMNS = [
@@ -82,24 +86,33 @@ def enrich_position_names(
 def render_summary(result) -> None:
     summary = result.risk_summary
     cols = st.columns(6)
-    cols[0].metric("보유 종목 수", int(summary.get("position_count") or 0))
-    cols[1].metric(
-        "총 평가금액 KRW",
-        format_metric_number(summary.get("total_market_value_krw"), 0),
-    )
-    cols[2].metric("상위 위험 기여", str(summary.get("top_risk_symbol") or "-"))
-    cols[3].metric(
-        "평균 상관관계",
-        format_metric_number(summary.get("average_correlation"), 3),
-    )
-    cols[4].metric(
-        "최악 스트레스 손실률",
-        format_metric_number(summary.get("worst_stress_loss_pct"), 2, "%"),
-    )
-    cols[5].metric(
-        "데이터 신뢰도",
-        format_reliability_label(summary.get("data_reliability")),
-    )
+    metrics = [
+        ("보유 종목 수", int(summary.get("position_count") or 0), "neutral"),
+        (
+            "총 평가금액 KRW",
+            format_metric_number(summary.get("total_market_value_krw"), 0),
+            "info",
+        ),
+        ("상위 위험 기여", str(summary.get("top_risk_symbol") or "-"), "warning"),
+        (
+            "평균 상관관계",
+            format_metric_number(summary.get("average_correlation"), 3),
+            "neutral",
+        ),
+        (
+            "최악 스트레스 손실률",
+            format_metric_number(summary.get("worst_stress_loss_pct"), 2, "%"),
+            "danger",
+        ),
+        (
+            "데이터 신뢰도",
+            format_reliability_label(summary.get("data_reliability")),
+            "neutral",
+        ),
+    ]
+    for col, (label, value, tone) in zip(cols, metrics, strict=True):
+        with col:
+            render_metric_card(label, value, tone=tone)
 
 
 def render_risk_contribution(frame: pd.DataFrame) -> None:
@@ -116,12 +129,14 @@ def render_risk_contribution(frame: pd.DataFrame) -> None:
     chart = chart.copy()
     chart["ticker"] = chart["market"].astype(str) + ":" + chart["symbol"].astype(str)
     st.plotly_chart(
-        px.bar(
-            chart.sort_values("risk_contribution"),
-            x="risk_contribution",
-            y="ticker",
-            orientation="h",
-            title="종목별 위험 기여도",
+        apply_plotly_dark_theme(
+            px.bar(
+                chart.sort_values("risk_contribution"),
+                x="risk_contribution",
+                y="ticker",
+                orientation="h",
+                title="종목별 위험 기여도",
+            )
         ),
         width="stretch",
     )
@@ -148,13 +163,15 @@ def render_correlation(result) -> None:
         st.info("상관관계 heatmap을 그릴 수 있는 숫자 데이터가 없습니다.")
         return
     st.plotly_chart(
-        px.imshow(
-            numeric_matrix,
-            text_auto=True,
-            zmin=-1,
-            zmax=1,
-            color_continuous_scale="RdBu",
-            title="상관관계 heatmap",
+        apply_plotly_dark_theme(
+            px.imshow(
+                numeric_matrix,
+                text_auto=True,
+                zmin=-1,
+                zmax=1,
+                color_continuous_scale="RdBu",
+                title="상관관계 heatmap",
+            )
         ),
         width="stretch",
     )
@@ -172,12 +189,14 @@ def render_stress_tests(frame: pd.DataFrame, selected: list[str]) -> None:
         st.info("선택한 스트레스 시나리오 결과가 없습니다.")
         return
     st.plotly_chart(
-        px.bar(
-            view.sort_values("stress_loss_pct"),
-            x="stress_loss_pct",
-            y="scenario",
-            orientation="h",
-            title="가정 시나리오 기준 추정 손실률",
+        apply_plotly_dark_theme(
+            px.bar(
+                view.sort_values("stress_loss_pct"),
+                x="stress_loss_pct",
+                y="scenario",
+                orientation="h",
+                title="가정 시나리오 기준 추정 손실률",
+            )
         ),
         width="stretch",
     )
@@ -203,13 +222,15 @@ def render_target_comparison(frame: pd.DataFrame) -> None:
         value_name="weight",
     )
     st.plotly_chart(
-        px.bar(
-            chart,
-            x="asset_class",
-            y="weight",
-            color="weight_type",
-            barmode="group",
-            title="현재 비중 vs 목표 비중",
+        apply_plotly_dark_theme(
+            px.bar(
+                chart,
+                x="asset_class",
+                y="weight",
+                color="weight_type",
+                barmode="group",
+                title="현재 비중 vs 목표 비중",
+            )
         ),
         width="stretch",
     )
@@ -228,12 +249,14 @@ def render_allocation_plan(frame: pd.DataFrame) -> None:
         st.info("보정 후 배분 금액 차트 데이터가 없습니다.")
         return
     st.plotly_chart(
-        px.bar(
-            chart,
-            x="symbol",
-            y="adjusted_amount",
-            color="asset_class",
-            title="추가매수 검토 배분안",
+        apply_plotly_dark_theme(
+            px.bar(
+                chart,
+                x="symbol",
+                y="adjusted_amount",
+                color="asset_class",
+                title="추가매수 검토 배분안",
+            )
         ),
         width="stretch",
     )
@@ -279,8 +302,13 @@ def build_custom_targets(profile: str) -> dict[str, float]:
 
 def main() -> None:
     st.set_page_config(page_title="리스크·리밸런싱 분석", layout="wide")
+    inject_global_css()
     init_db()
-    st.title("리스크·리밸런싱 분석")
+    render_page_header(
+        "리스크·리밸런싱 분석",
+        "위험 기여도, 상관관계, 스트레스 테스트, 목표 비중을 통합 점검합니다.",
+        badges=[("가정 기반 리스크 점검", "warning"), ("실제 주문 없음", "success")],
+    )
     provider = build_market_data_provider()
     render_data_warning(provider)
     st.warning(

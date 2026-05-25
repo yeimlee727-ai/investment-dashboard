@@ -8,8 +8,11 @@ from src.data_providers.market_data_provider import MarketDataProvider
 from src.models import WatchlistItem
 from src.ui_helpers import (
     build_market_data_provider,
+    inject_global_css,
     localize_columns,
+    render_alert,
     render_data_warning,
+    render_page_header,
 )
 
 
@@ -83,40 +86,50 @@ def build_watchlist_rows(
 
 def main() -> None:
     st.set_page_config(page_title="관심종목", layout="wide")
+    inject_global_css()
     init_db()
-    st.title("관심종목 관리")
+    render_page_header(
+        "관심종목 관리",
+        "국내/미국 종목을 등록하고 데이터 조회 상태와 메모를 함께 관리합니다.",
+        badges=[("목록 정리 전용", "info"), ("실제 주문 없음", "success")],
+    )
     provider = build_market_data_provider()
     render_data_warning(provider)
 
-    with st.form("watchlist_form", clear_on_submit=True):
-        col1, col2, col3 = st.columns(3)
-        symbol = col1.text_input(
-            "종목코드", placeholder="KR은 6자리 코드 예: 005930 / US는 티커 예: AAPL"
-        )
-        name = col2.text_input("종목명", placeholder="삼성전자")
-        market = col3.selectbox(
-            "시장구분",
-            ["KR", "US"],
-            help="KR: 국내 종목 6자리 코드 / US: 미국 티커",
-        )
-        sector = st.text_input("섹터", placeholder="반도체")
-        memo = st.text_area("메모", placeholder="관심 이유, 체크 포인트")
-        submitted = st.form_submit_button("저장")
-        if submitted:
-            if not symbol or not name:
-                st.error("종목코드와 종목명은 필수입니다.")
-            else:
-                result = add_item(
-                    symbol.strip().upper(),
-                    name.strip(),
-                    market,
-                    sector.strip(),
-                    memo.strip(),
-                )
-                if result == "duplicate":
-                    st.warning("이미 등록된 종목입니다.")
+    render_alert("관심종목 삭제는 실제 주문과 무관한 목록 정리 기능입니다.", "info")
+
+    with st.container(border=True):
+        st.subheader("관심종목 등록")
+        with st.form("watchlist_form", clear_on_submit=True):
+            col1, col2, col3 = st.columns(3)
+            symbol = col1.text_input(
+                "종목코드",
+                placeholder="KR은 6자리 코드 예: 005930 / US는 티커 예: AAPL",
+            )
+            name = col2.text_input("종목명", placeholder="삼성전자")
+            market = col3.selectbox(
+                "시장구분",
+                ["KR", "US"],
+                help="KR: 국내 종목 6자리 코드 / US: 미국 티커",
+            )
+            sector = st.text_input("섹터", placeholder="반도체")
+            memo = st.text_area("메모", placeholder="관심 이유, 체크 포인트")
+            submitted = st.form_submit_button("저장")
+            if submitted:
+                if not symbol or not name:
+                    st.error("종목코드와 종목명은 필수입니다.")
                 else:
-                    st.success("저장했습니다.")
+                    result = add_item(
+                        symbol.strip().upper(),
+                        name.strip(),
+                        market,
+                        sector.strip(),
+                        memo.strip(),
+                    )
+                    if result == "duplicate":
+                        st.warning("이미 등록된 종목입니다.")
+                    else:
+                        st.success("저장했습니다.")
 
     items = load_items()
     st.subheader("등록 목록")
@@ -130,25 +143,28 @@ def main() -> None:
             "일부 관심종목의 현재가 조회에 실패했습니다. quote_error를 확인하세요."
         )
 
-    st.subheader("관심종목 삭제")
-    st.caption("관심종목 삭제는 실제 주문과 무관한 목록 정리 기능입니다.")
-    options = {f"{item.market} / {item.symbol} - {item.name}": item for item in items}
-    target_key = st.selectbox("삭제할 종목 선택", ["선택 안 함", *list(options)])
-    confirm_delete = st.checkbox("선택한 관심종목을 삭제하는 것을 확인합니다.")
-    if st.button("선택 종목 삭제", type="secondary"):
-        if target_key == "선택 안 함":
-            st.warning("삭제할 관심종목을 선택하세요.")
-            return
-        if not confirm_delete:
-            st.warning("삭제 확인 체크박스를 선택하세요.")
-            return
-        target = options[target_key]
-        deleted_count = remove_item(target.symbol, target.market)
-        if deleted_count:
-            st.success("관심종목을 삭제했습니다.")
-        else:
-            st.warning("삭제할 관심종목을 찾지 못했습니다.")
-        st.rerun()
+    with st.container(border=True):
+        st.subheader("관심종목 삭제")
+        st.caption("관심종목 삭제는 실제 주문과 무관한 목록 정리 기능입니다.")
+        options = {
+            f"{item.market} / {item.symbol} - {item.name}": item for item in items
+        }
+        target_key = st.selectbox("삭제할 종목 선택", ["선택 안 함", *list(options)])
+        confirm_delete = st.checkbox("선택한 관심종목을 삭제하는 것을 확인합니다.")
+        if st.button("선택 종목 삭제", type="secondary"):
+            if target_key == "선택 안 함":
+                st.warning("삭제할 관심종목을 선택하세요.")
+                return
+            if not confirm_delete:
+                st.warning("삭제 확인 체크박스를 선택하세요.")
+                return
+            target = options[target_key]
+            deleted_count = remove_item(target.symbol, target.market)
+            if deleted_count:
+                st.success("관심종목을 삭제했습니다.")
+            else:
+                st.warning("삭제할 관심종목을 찾지 못했습니다.")
+            st.rerun()
 
 
 main()

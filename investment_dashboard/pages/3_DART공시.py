@@ -5,12 +5,23 @@ from datetime import date, timedelta
 import streamlit as st
 
 from src.dart.dart_client import DartClient
-from src.ui_helpers import render_data_warning
+from src.ui_helpers import (
+    format_display_dataframe,
+    inject_global_css,
+    render_data_warning,
+    render_metric_card,
+    render_page_header,
+)
 
 
 def main() -> None:
     st.set_page_config(page_title="DART 공시", layout="wide")
-    st.title("DART 공시")
+    inject_global_css()
+    render_page_header(
+        "DART 공시",
+        "공시 유형, 위험 태그, 위험 점수를 필터링해 검토 필요 신호를 확인합니다.",
+        badges=[("공시 리스크 점검", "info"), ("투자 실행 지시 아님", "success")],
+    )
     render_data_warning()
     client = DartClient()
     if not client.has_api_key():
@@ -34,6 +45,18 @@ def main() -> None:
         disclosures["risk_tag"] = "neutral"
     if "risk_score" not in disclosures.columns:
         disclosures["risk_score"] = 38
+
+    tag_counts = disclosures["risk_tag"].value_counts() if not disclosures.empty else {}
+    cols = st.columns(4)
+    metric_data = [
+        ("critical", int(tag_counts.get("critical", 0)), "danger"),
+        ("risk", int(tag_counts.get("risk", 0)), "warning"),
+        ("caution", int(tag_counts.get("caution", 0)), "warning"),
+        ("positive", int(tag_counts.get("positive", 0)), "success"),
+    ]
+    for col, (label, value, tone) in zip(cols, metric_data, strict=True):
+        with col:
+            render_metric_card(label, value, tone=tone)
 
     data_sources = set(disclosures["data_source"].astype(str))
     attr_source = str(disclosures.attrs.get("data_source", "UNKNOWN"))
@@ -64,11 +87,13 @@ def main() -> None:
         if not disclosures.empty
         else ["전체"]
     )
-    filter_cols = st.columns(4)
-    type_filter = filter_cols[0].selectbox("공시 유형 필터", type_options)
-    tag_filter = filter_cols[1].selectbox("위험 태그 필터", tag_options)
-    source_filter = filter_cols[2].selectbox("데이터 출처 필터", source_options)
-    only_high_risk = filter_cols[3].checkbox("critical/risk만 보기")
+    with st.container(border=True):
+        st.subheader("필터")
+        filter_cols = st.columns(4)
+        type_filter = filter_cols[0].selectbox("공시 유형 필터", type_options)
+        tag_filter = filter_cols[1].selectbox("위험 태그 필터", tag_options)
+        source_filter = filter_cols[2].selectbox("데이터 출처 필터", source_options)
+        only_high_risk = filter_cols[3].checkbox("critical/risk만 보기")
     view = disclosures.copy()
     if type_filter != "전체":
         view = view[view["disclosure_type"] == type_filter]
@@ -100,13 +125,13 @@ def main() -> None:
         }
     )
     st.dataframe(
-        display,
+        format_display_dataframe(display),
         hide_index=True,
         width="stretch",
         column_config={
             "공시 링크": st.column_config.LinkColumn("공시 링크"),
-            "risk_score": st.column_config.NumberColumn(
-                "risk_score",
+            "위험 점수": st.column_config.TextColumn(
+                "위험 점수",
                 help="매수/매도 실행 지시가 아닌 검토 필요 위험 점수입니다.",
             ),
         },

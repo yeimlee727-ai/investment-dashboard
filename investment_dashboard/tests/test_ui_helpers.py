@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import importlib
 
+import plotly.graph_objects as go
+
 from src.ui_helpers import (
+    apply_plotly_dark_theme,
     contains_prohibited_decision_wording,
     format_calculation_value,
     format_reliability_label,
@@ -17,6 +20,9 @@ from src.ui_helpers import (
     korean_column_name,
     localize_columns,
     mock_delete_warning_message,
+    safe_display_value,
+    safe_krw,
+    safe_percent,
 )
 
 
@@ -80,6 +86,20 @@ def test_calculation_unavailable_display() -> None:
     assert format_calculation_value(None) == "계산 불가"
     assert format_calculation_value(float("nan")) == "계산 불가"
     assert format_calculation_value(float("inf")) == "계산 불가"
+
+
+def test_safe_display_formatters() -> None:
+    assert safe_display_value(float("nan")) == "-"
+    assert safe_krw(1234567.8) == "1,234,568원"
+    assert safe_percent(12.345) == "12.35%"
+    assert safe_percent(float("inf")) == "-"
+
+
+def test_plotly_dark_theme_helper_keeps_figure_valid() -> None:
+    fig = apply_plotly_dark_theme(go.Figure())
+
+    assert fig.layout.template is not None
+    assert fig.layout.paper_bgcolor == "rgba(0,0,0,0)"
 
 
 def test_prohibited_investment_wording_detector() -> None:

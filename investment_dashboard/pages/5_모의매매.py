@@ -11,11 +11,16 @@ from src.broker.mock_broker import MockBroker
 from src.database import init_db
 from src.risk.risk_engine import RiskConfig, RiskEngine
 from src.ui_helpers import (
+    apply_plotly_dark_theme,
     build_market_data_provider,
+    format_display_dataframe,
     get_fx_status_message,
+    inject_global_css,
     localize_columns,
     mock_delete_warning_message,
     render_data_warning,
+    render_metric_card,
+    render_page_header,
 )
 
 POSITION_COLUMNS = [
@@ -87,7 +92,8 @@ def render_summary_cards(summary: dict[str, object]) -> None:
     for row in rows:
         cols = st.columns(len(row))
         for col, (label, value) in zip(cols, row, strict=True):
-            col.metric(label, value)
+            with col:
+                render_metric_card(label, value)
 
 
 def render_fx_status(
@@ -140,21 +146,32 @@ def render_position_charts(positions: pd.DataFrame) -> None:
         return
     chart_data["ticker"] = chart_data["market"] + ":" + chart_data["symbol"]
     st.plotly_chart(
-        px.bar(
-            chart_data, x="ticker", y="market_value_krw", title="포지션별 평가금액 KRW"
+        apply_plotly_dark_theme(
+            px.bar(
+                chart_data,
+                x="ticker",
+                y="market_value_krw",
+                title="포지션별 평가금액 KRW",
+            )
         ),
         width="stretch",
     )
     st.plotly_chart(
-        px.bar(chart_data, x="ticker", y="total_pnl_krw", title="포지션별 총손익 KRW"),
+        apply_plotly_dark_theme(
+            px.bar(
+                chart_data, x="ticker", y="total_pnl_krw", title="포지션별 총손익 KRW"
+            )
+        ),
         width="stretch",
     )
     st.plotly_chart(
-        px.pie(
-            chart_data,
-            names="ticker",
-            values="market_value_krw",
-            title="종목별 비중 KRW",
+        apply_plotly_dark_theme(
+            px.pie(
+                chart_data,
+                names="ticker",
+                values="market_value_krw",
+                title="종목별 비중 KRW",
+            )
         ),
         width="stretch",
     )
@@ -177,15 +194,19 @@ def render_realized_charts(realized: pd.DataFrame) -> None:
     )
     daily["cumulative_realized_pnl"] = daily["realized_pnl"].cumsum()
     st.plotly_chart(
-        px.line(daily, x="day", y="realized_pnl", title="일별 실현손익"),
+        apply_plotly_dark_theme(
+            px.line(daily, x="day", y="realized_pnl", title="일별 실현손익")
+        ),
         width="stretch",
     )
     st.plotly_chart(
-        px.line(
-            daily,
-            x="day",
-            y="cumulative_realized_pnl",
-            title="누적 실현손익",
+        apply_plotly_dark_theme(
+            px.line(
+                daily,
+                x="day",
+                y="cumulative_realized_pnl",
+                title="누적 실현손익",
+            )
         ),
         width="stretch",
     )
@@ -271,8 +292,13 @@ def render_position_delete_ui(
 
 def main() -> None:
     st.set_page_config(page_title="모의매매", layout="wide")
+    inject_global_css()
     init_db()
-    st.title("모의매매")
+    render_page_header(
+        "모의매매",
+        "MockBroker 기반 가상 주문, 가상 포지션, 원화 환산 손익을 점검합니다.",
+        badges=[("가상 주문만 처리", "info"), ("실제 계좌 조회 없음", "success")],
+    )
     provider = build_market_data_provider()
     render_data_warning(provider)
     st.warning(
@@ -356,7 +382,7 @@ def main() -> None:
 
     if not positions_df.empty:
         st.dataframe(
-            localize_columns(
+            format_display_dataframe(
                 positions_df[[col for col in POSITION_COLUMNS if col in positions_df]]
             ),
             hide_index=True,
@@ -385,7 +411,7 @@ def main() -> None:
         st.info("표시할 가상 주문 로그가 없습니다.")
     else:
         st.dataframe(
-            localize_columns(filtered_orders), hide_index=True, width="stretch"
+            format_display_dataframe(filtered_orders), hide_index=True, width="stretch"
         )
 
     st.subheader("실현손익 리포트")
@@ -393,7 +419,9 @@ def main() -> None:
     if realized_df.empty:
         st.info("실현손익 로그가 없습니다.")
     else:
-        st.dataframe(localize_columns(realized_df), hide_index=True, width="stretch")
+        st.dataframe(
+            format_display_dataframe(realized_df), hide_index=True, width="stretch"
+        )
     render_realized_charts(realized_df)
 
 
