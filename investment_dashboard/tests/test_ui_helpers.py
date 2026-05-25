@@ -8,9 +8,12 @@ from src.ui_helpers import (
     format_reliability_label,
     format_avg_profit_loss_ratio,
     format_profit_factor,
+    get_allocation_notice,
     get_backtest_warning_messages,
     get_data_mode_status,
     get_fx_status_message,
+    get_rebalancing_band_label,
+    get_stress_test_notice,
     korean_column_name,
     localize_columns,
     mock_delete_warning_message,
@@ -82,6 +85,15 @@ def test_calculation_unavailable_display() -> None:
 def test_prohibited_investment_wording_detector() -> None:
     assert contains_prohibited_decision_wording("매수 추천 문구")
     assert not contains_prohibited_decision_wording("추가매수 후보를 검토합니다.")
+
+
+def test_rebalancing_status_helpers_are_safe() -> None:
+    assert get_rebalancing_band_label(True) == "리밸런싱 검토"
+    assert get_rebalancing_band_label(False) == "유지 가능 구간"
+    assert "가정 시나리오" in get_stress_test_notice()
+    assert not contains_prohibited_decision_wording(get_stress_test_notice())
+    assert "의사결정 보조 정보" in get_allocation_notice()
+    assert not contains_prohibited_decision_wording(get_allocation_notice())
 
 
 def test_app_import_smoke() -> None:

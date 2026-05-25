@@ -261,6 +261,108 @@ def test_us_fx_error_is_reported_safely() -> None:
     assert result.allocation_plan.empty
 
 
+def test_all_market_values_none_are_handled_safely() -> None:
+    positions = [
+        make_position(
+            "GRAB",
+            market="US",
+            name="GRAB",
+            value=None,  # type: ignore[arg-type]
+            weight=100,
+            fx_error="fx failed",
+        )
+    ]
+    provider = FakeHistoryProvider({("GRAB", "US"): make_history("GRAB", market="US")})
+
+    result = RebalancingEngine().analyze(positions, provider)
+
+    assert result.risk_summary["total_market_value_krw"] == 0
+    assert result.risk_contribution.iloc[0]["position_weight_krw"] is None
+    assert result.risk_contribution.iloc[0]["risk_contribution"] is None
+
+
+def test_target_weight_total_status_is_reported() -> None:
+    positions = [make_position(value=1_000_000, weight=100)]
+    provider = FakeHistoryProvider({("360750", "KR"): make_history("360750")})
+
+    result = RebalancingEngine().analyze(
+        positions,
+        provider,
+        target_weights={
+            "미국 코어 ETF": 40.0,
+            "미국 반도체/AI ETF": 0.0,
+            "인도 ETF": 0.0,
+            "개별 성장주": 0.0,
+            "현금": 20.0,
+        },
+    )
+
+    assert result.target_comparison.iloc[0]["target_total_weight"] == 60.0
+    assert "100%" in result.target_comparison.iloc[0]["target_total_status"]
+
+
+def test_zero_additional_investment_returns_empty_allocation() -> None:
+    positions = [make_position(value=1_000_000, weight=100)]
+    provider = FakeHistoryProvider({("360750", "KR"): make_history("360750")})
+
+    result = RebalancingEngine().analyze(
+        positions,
+        provider,
+        additional_investment_krw=0,
+    )
+
+    assert result.allocation_plan.empty
+
+
+def test_all_restricted_positions_keep_cash_waiting() -> None:
+    positions = [
+        make_position(
+            "GRAB",
+            market="US",
+            name="GRAB",
+            value=1_000_000,
+            weight=5,
+            fx_error="fx failed",
+        )
+    ]
+    provider = FakeHistoryProvider(
+        {("GRAB", "US"): make_history("GRAB", market="US", data_source="SAMPLE")}
+    )
+
+    result = RebalancingEngine().analyze(
+        positions,
+        provider,
+        target_weights={"개별 성장주": 10.0, "현금": 90.0},
+        additional_investment_krw=500_000,
+        decision_frame=decision_frame(),
+    )
+
+    cash = result.allocation_plan[result.allocation_plan["symbol"] == "CASH"].iloc[0]
+    assert cash["adjusted_amount"] == 500_000
+    assert result.allocation_plan["adjusted_amount"].sum() <= 500_000
+
+
+def test_correlation_pairs_exclude_self_correlation() -> None:
+    provider = FakeHistoryProvider(
+        {
+            ("360750", "KR"): make_history("360750", end=130),
+            ("390390", "KR"): make_history("390390", end=170),
+            ("453870", "KR"): make_history("453870", end=90),
+        }
+    )
+    positions = [
+        make_position("360750", name="TIGER 미국S&P500", value=1_000_000, weight=40),
+        make_position("390390", name="KODEX 미국반도체", value=800_000, weight=35),
+        make_position("453870", name="TIGER 인도니프티50", value=600_000, weight=25),
+    ]
+
+    result = RebalancingEngine().analyze(positions, provider)
+
+    highest_pair = str(result.correlation_summary["highest_pair"])
+    left, right = highest_pair.split(" / ")
+    assert left != right
+
+
 def test_result_has_no_nan_or_inf_values() -> None:
     positions = [make_position()]
     provider = FakeHistoryProvider({("360750", "KR"): make_history("360750")})

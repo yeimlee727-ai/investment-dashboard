@@ -15,6 +15,8 @@ from src.ui_helpers import (
     format_display_dataframe,
     format_metric_number,
     format_reliability_label,
+    get_allocation_notice,
+    get_stress_test_notice,
     render_data_warning,
 )
 
@@ -40,6 +42,8 @@ TARGET_COLUMNS = [
     "tolerance_pct",
     "is_outside_band",
     "rebalance_opinion",
+    "target_total_weight",
+    "target_total_status",
 ]
 
 ALLOCATION_COLUMNS = [
@@ -139,9 +143,13 @@ def render_correlation(result) -> None:
         st.info("상관관계는 최소 2개 종목의 유효 수익률 데이터가 필요합니다.")
         return
     st.dataframe(format_display_dataframe(matrix), width="stretch")
+    numeric_matrix = matrix.apply(pd.to_numeric, errors="coerce")
+    if numeric_matrix.dropna(how="all").empty:
+        st.info("상관관계 heatmap을 그릴 수 있는 숫자 데이터가 없습니다.")
+        return
     st.plotly_chart(
         px.imshow(
-            matrix.astype(float),
+            numeric_matrix,
             text_auto=True,
             zmin=-1,
             zmax=1,
@@ -154,6 +162,7 @@ def render_correlation(result) -> None:
 
 def render_stress_tests(frame: pd.DataFrame, selected: list[str]) -> None:
     st.subheader("스트레스 테스트")
+    st.caption(get_stress_test_notice())
     if frame.empty:
         st.info("스트레스 테스트를 계산할 포지션 평가금액이 없습니다.")
         return
@@ -168,7 +177,7 @@ def render_stress_tests(frame: pd.DataFrame, selected: list[str]) -> None:
             x="stress_loss_pct",
             y="scenario",
             orientation="h",
-            title="가정 시나리오 기준 손실률",
+            title="가정 시나리오 기준 추정 손실률",
         ),
         width="stretch",
     )
@@ -179,6 +188,12 @@ def render_target_comparison(frame: pd.DataFrame) -> None:
     if frame.empty:
         st.info("목표 비중 비교 데이터를 생성할 수 없습니다.")
         return
+    status = frame["target_total_status"].dropna().iloc[0]
+    total = frame["target_total_weight"].dropna().iloc[0]
+    if abs(float(total) - 100) > 0.01:
+        st.warning(str(status))
+    else:
+        st.caption(str(status))
     view = frame[[column for column in TARGET_COLUMNS if column in frame.columns]]
     st.dataframe(format_display_dataframe(view), hide_index=True, width="stretch")
     chart = frame.melt(
@@ -202,8 +217,9 @@ def render_target_comparison(frame: pd.DataFrame) -> None:
 
 def render_allocation_plan(frame: pd.DataFrame) -> None:
     st.subheader("추가 투자금 배분안")
+    st.caption(get_allocation_notice())
     if frame.empty:
-        st.info("추가 투자금이 없거나 배분 가능한 포지션 데이터가 없습니다.")
+        st.info("추가 투자금이 없거나 배분 검토에 필요한 포지션 데이터가 없습니다.")
         return
     view = frame[[column for column in ALLOCATION_COLUMNS if column in frame.columns]]
     st.dataframe(format_display_dataframe(view), hide_index=True, width="stretch")
@@ -240,6 +256,9 @@ def build_custom_targets(profile: str) -> dict[str, float]:
     with st.expander("목표 비중 수동 수정", expanded=False):
         st.caption(
             "합계가 100%와 다를 수 있으며, 리밸런싱 검토용 기준으로만 사용합니다."
+        )
+        st.caption(
+            "기본 제한: 개별 성장주 10%, 반도체/AI 30%, 단일 종목 40% 상한을 점검합니다."
         )
         targets = {}
         for category, value in defaults.items():

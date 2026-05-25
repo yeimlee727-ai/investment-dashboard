@@ -97,8 +97,8 @@ KOREAN_COLUMN_LABELS = {
     "risk_weight_gap": "위험-비중 차이(%p)",
     "risk_evaluation": "위험 기여도 평가",
     "scenario": "시나리오",
-    "stress_loss_krw": "가정 손실금액(KRW)",
-    "stress_loss_pct": "가정 손실률(%)",
+    "stress_loss_krw": "가정 시나리오 기준 추정 손실(KRW)",
+    "stress_loss_pct": "가정 시나리오 기준 추정 손실률(%)",
     "largest_loss_symbol": "최대 손실 기여 종목",
     "comment": "코멘트",
     "current_weight": "현재 비중(%)",
@@ -107,6 +107,8 @@ KOREAN_COLUMN_LABELS = {
     "tolerance_pct": "허용 범위(%p)",
     "is_outside_band": "허용 범위 초과",
     "rebalance_opinion": "리밸런싱 검토 의견",
+    "target_total_weight": "목표 비중 합계(%)",
+    "target_total_status": "목표 비중 상태",
     "shortage_weight": "부족 비중(%p)",
     "candidate_amount": "후보 금액(KRW)",
     "adjusted_amount": "보정 후 금액(KRW)",
@@ -197,6 +199,24 @@ def mock_delete_warning_message() -> str:
     return (
         "이 삭제 기능은 MockBroker 기반 테스트 데이터 정리용입니다. "
         "실제 주문, 실제 체결, 실제 계좌와는 무관합니다."
+    )
+
+
+def get_rebalancing_band_label(is_outside_band: object) -> str:
+    return "리밸런싱 검토" if bool(is_outside_band) else "유지 가능 구간"
+
+
+def get_stress_test_notice() -> str:
+    return (
+        "스트레스 테스트는 고정 충격률을 적용한 가정 시나리오 기준 추정입니다. "
+        "실제 미래 손실을 예측하거나 보장하지 않습니다."
+    )
+
+
+def get_allocation_notice() -> str:
+    return (
+        "추가 투자금 배분안은 목표 비중, 데이터 신뢰도, 위험 기여도를 함께 본 "
+        "의사결정 보조 정보입니다. 최종 매매 판단은 별도 검토가 필요합니다."
     )
 
 
