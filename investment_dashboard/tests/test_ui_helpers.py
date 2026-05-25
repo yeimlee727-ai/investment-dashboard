@@ -3,6 +3,9 @@ from __future__ import annotations
 import importlib
 
 from src.ui_helpers import (
+    contains_prohibited_decision_wording,
+    format_calculation_value,
+    format_reliability_label,
     format_avg_profit_loss_ratio,
     format_profit_factor,
     get_backtest_warning_messages,
@@ -62,6 +65,23 @@ def test_mock_delete_warning_message_is_clear() -> None:
 
     assert "MockBroker" in message
     assert "실제 주문" in message
+
+
+def test_reliability_label_is_korean() -> None:
+    assert format_reliability_label("HIGH") == "높음"
+    assert format_reliability_label("LOW") == "낮음"
+    assert format_reliability_label(None) == "알 수 없음"
+
+
+def test_calculation_unavailable_display() -> None:
+    assert format_calculation_value(None) == "계산 불가"
+    assert format_calculation_value(float("nan")) == "계산 불가"
+    assert format_calculation_value(float("inf")) == "계산 불가"
+
+
+def test_prohibited_investment_wording_detector() -> None:
+    assert contains_prohibited_decision_wording("매수 추천 문구")
+    assert not contains_prohibited_decision_wording("추가매수 후보를 검토합니다.")
 
 
 def test_app_import_smoke() -> None:

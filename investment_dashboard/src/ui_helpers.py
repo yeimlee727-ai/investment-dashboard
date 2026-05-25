@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import math
+
+import pandas as pd
 import streamlit as st
 
 from src.data_providers.base import DataMode
@@ -92,6 +95,23 @@ KOREAN_COLUMN_LABELS = {
     "설명": "설명",
 }
 
+RELIABILITY_LABELS = {
+    "HIGH": "높음",
+    "MEDIUM": "보통",
+    "LOW": "낮음",
+    "UNKNOWN": "알 수 없음",
+}
+
+PROHIBITED_DECISION_WORDS = [
+    "매수 추천",
+    "매도 추천",
+    "지금 사야",
+    "지금 팔아",
+    "강력 매수",
+    "수익 보장",
+    "확정 전망",
+]
+
 
 def korean_column_name(column: str) -> str:
     return KOREAN_COLUMN_LABELS.get(column, column)
@@ -109,6 +129,47 @@ def localize_columns(
             if isinstance(row, dict)
         ]
     return rows_or_frame
+
+
+def format_calculation_value(value: object) -> object:
+    if value is None:
+        return "계산 불가"
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return "계산 불가"
+    if isinstance(value, str) and value.strip().lower() in {"nan", "inf", "-inf"}:
+        return "계산 불가"
+    return value
+
+
+def format_display_dataframe(frame: pd.DataFrame) -> pd.DataFrame:
+    localized = localize_columns(frame.copy())
+    if not isinstance(localized, pd.DataFrame):
+        return frame
+    return localized.map(format_calculation_value)
+
+
+def format_reliability_label(value: object) -> str:
+    level = str(value or "UNKNOWN").upper()
+    return RELIABILITY_LABELS.get(level, "알 수 없음")
+
+
+def contains_prohibited_decision_wording(text: str) -> bool:
+    return any(word in text for word in PROHIBITED_DECISION_WORDS)
+
+
+def format_metric_number(
+    value: object,
+    decimals: int = 0,
+    suffix: str = "",
+    unavailable: str = "계산 불가",
+) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return unavailable
+    if math.isnan(number) or math.isinf(number):
+        return unavailable
+    return f"{number:,.{decimals}f}{suffix}"
 
 
 def mock_delete_warning_message() -> str:

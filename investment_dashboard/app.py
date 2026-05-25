@@ -18,6 +18,9 @@ from src.scoring.portfolio_decision_engine import PortfolioDecisionEngine
 from src.scoring.scoring_engine import ScoringEngine
 from src.ui_helpers import (
     build_market_data_provider,
+    format_display_dataframe,
+    format_metric_number,
+    format_reliability_label,
     get_data_mode_status,
     localize_columns,
     render_data_warning,
@@ -403,13 +406,16 @@ def render_portfolio_decision_summary(provider: MarketDataProvider) -> None:
         return
     cols = st.columns(4)
     cols[0].metric(
-        "상위 1개 비중", f"{float(result.portfolio_summary.get('top1_weight', 0)):.2f}%"
+        "상위 1개 비중",
+        format_metric_number(result.portfolio_summary.get("top1_weight"), 2, "%"),
     )
     cols[1].metric(
-        "상위 3개 비중", f"{float(result.portfolio_summary.get('top3_weight', 0)):.2f}%"
+        "상위 3개 비중",
+        format_metric_number(result.portfolio_summary.get("top3_weight"), 2, "%"),
     )
     cols[2].metric(
-        "데이터 신뢰도", str(result.portfolio_summary.get("reliability", "UNKNOWN"))
+        "데이터 신뢰도",
+        format_reliability_label(result.portfolio_summary.get("reliability")),
     )
     cols[3].metric("분석 종목 수", len(frame))
     st.caption("자세히 보기: 포트폴리오 전략분석 페이지")
@@ -426,13 +432,17 @@ def render_portfolio_decision_summary(provider: MarketDataProvider) -> None:
     sell = frame.sort_values("sell_review_score", ascending=False).head(3)
     st.write("추가매수 우선 후보")
     st.dataframe(
-        localize_columns(buy[[col for col in display_columns if col in buy.columns]]),
+        format_display_dataframe(
+            buy[[col for col in display_columns if col in buy.columns]]
+        ),
         hide_index=True,
         width="stretch",
     )
     st.write("매도 검토 신호 상위")
     st.dataframe(
-        localize_columns(sell[[col for col in display_columns if col in sell.columns]]),
+        format_display_dataframe(
+            sell[[col for col in display_columns if col in sell.columns]]
+        ),
         hide_index=True,
         width="stretch",
     )

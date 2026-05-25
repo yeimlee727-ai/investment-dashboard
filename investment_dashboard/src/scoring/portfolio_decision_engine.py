@@ -68,16 +68,43 @@ class PortfolioDecisionEngine:
         total_pnl_pct = self._safe_float(position.get("total_pnl_pct"))
         data_source = str(history.attrs.get("data_source") or "")
         provider = str(history.attrs.get("provider") or "")
-        if history.empty or len(history) < 60:
-            row = self._empty_position_row(position, name, data_source, provider)
+        if (
+            history.empty
+            or len(history) < 60
+            or not self._has_required_price_columns(history)
+        ):
+            row = self._empty_position_row(
+                position,
+                name,
+                data_source,
+                provider,
+                "분석 가능한 가격 데이터가 부족합니다.",
+            )
             row["trend_status"] = "데이터 부족"
             return row
 
-        enriched = add_technical_indicators(history).copy()
+        try:
+            enriched = add_technical_indicators(history).copy()
+        except (KeyError, ValueError, TypeError):
+            return self._empty_position_row(
+                position,
+                name,
+                data_source,
+                provider,
+                "필수 가격/거래량 컬럼이 부족해 분석할 수 없습니다.",
+            )
         enriched["ma120"] = enriched["close"].rolling(120).mean()
         enriched["ma240"] = enriched["close"].rolling(240).mean()
         latest = enriched.iloc[-1]
-        close = self._safe_float(latest.get("close"))
+        close = self._finite_float(latest.get("close"))
+        if close is None or close <= 0:
+            return self._empty_position_row(
+                position,
+                name,
+                data_source,
+                provider,
+                "현재가가 없어 분석할 수 없습니다.",
+            )
         days = int(len(enriched))
         data_years = round(days / 252, 1)
         returns = {
@@ -90,26 +117,30 @@ class PortfolioDecisionEngine:
         }
         volatility = self._annualized_volatility(enriched)
         mdd = self._max_drawdown(enriched)
-        high_52w = float(enriched["high"].tail(252).max())
-        low_52w = float(enriched["low"].tail(252).min())
+        high_52w = self._finite_float(enriched["high"].tail(252).max())
+        low_52w = self._finite_float(enriched["low"].tail(252).min())
         drawdown_from_52w_high = (
-            (close / high_52w - 1) * 100 if close and high_52w else 0.0
+            (close / high_52w - 1) * 100 if high_52w and high_52w > 0 else None
         )
-        rebound_from_52w_low = (close / low_52w - 1) * 100 if close and low_52w else 0.0
+        rebound_from_52w_low = (
+            (close / low_52w - 1) * 100 if low_52w and low_52w > 0 else None
+        )
         ma_positions = {
             "ma20_position": self._ma_position(close, latest.get("ema20")),
             "ma60_position": self._ma_position(close, latest.get("ema60")),
             "ma120_position": self._ma_position(close, latest.get("ma120")),
             "ma240_position": self._ma_position(close, latest.get("ma240")),
         }
-        rsi = self._safe_float(latest.get("rsi14"), 50.0)
-        volume_ma20 = self._safe_float(latest.get("volume_ma20"))
-        volume = self._safe_float(latest.get("volume"))
-        volume_ratio = volume / volume_ma20 if volume_ma20 else 0.0
+        rsi = self._score_float(latest.get("rsi14"), 50.0)
+        volume_ma20 = self._finite_float(latest.get("volume_ma20"))
+        volume = self._finite_float(latest.get("volume"))
+        volume_ratio = (
+            volume / volume_ma20 if volume_ma20 and volume is not None else None
+        )
         trend_status = self.classify_trend(latest, close, drawdown_from_52w_high, days)
         reliability, reliability_reason = self._reliability(days, data_source)
         risk_tag = str(disclosure_context.get("aggregate_risk_tag", "neutral"))
-        risk_score = self._safe_float(
+        risk_score = self._score_float(
             disclosure_context.get("aggregate_risk_score"), 38
         )
         sell_score = self._sell_review_score(
@@ -117,9 +148,9 @@ class PortfolioDecisionEngine:
             total_pnl_pct=total_pnl_pct,
             rsi=rsi,
             ma_positions=ma_positions,
-            drawdown_from_52w_high=drawdown_from_52w_high,
-            mdd=mdd,
-            volatility=volatility,
+            drawdown_from_52w_high=self._score_float(drawdown_from_52w_high),
+            mdd=self._score_float(mdd),
+            volatility=self._score_float(volatility),
             risk_tag=risk_tag,
             risk_score=risk_score,
             reliability=reliability,
@@ -132,7 +163,7 @@ class PortfolioDecisionEngine:
             rsi=rsi,
             volatility=volatility,
             ma_positions=ma_positions,
-            return_3m=returns["return_3m"],
+            return_3m=self._score_float(returns["return_3m"]),
             risk_tag=risk_tag,
             reliability=reliability,
             is_etf=self._is_etf(position),
@@ -160,12 +191,12 @@ class PortfolioDecisionEngine:
             "reliability": reliability,
             "reliability_reason": reliability_reason,
             "current_price": round(close, 2),
-            "annualized_volatility": round(volatility, 2),
-            "mdd": round(mdd, 2),
-            "drawdown_from_52w_high": round(drawdown_from_52w_high, 2),
-            "rebound_from_52w_low": round(rebound_from_52w_low, 2),
+            "annualized_volatility": self._round_optional(volatility),
+            "mdd": self._round_optional(mdd),
+            "drawdown_from_52w_high": self._round_optional(drawdown_from_52w_high),
+            "rebound_from_52w_low": self._round_optional(rebound_from_52w_low),
             "rsi": round(rsi, 2),
-            "volume_ratio": round(volume_ratio, 2),
+            "volume_ratio": self._round_optional(volume_ratio),
             "risk_tag": risk_tag,
             "risk_score": round(risk_score, 1),
             "sell_review_score": round(sell_score, 1),
@@ -176,20 +207,28 @@ class PortfolioDecisionEngine:
                 symbol, trend_status, buy_score, sell_score, reliability
             ),
         }
-        row.update({key: round(value, 2) for key, value in returns.items()})
-        row.update({key: round(value, 2) for key, value in ma_positions.items()})
+        row.update({key: self._round_optional(value) for key, value in returns.items()})
+        row.update(
+            {key: self._round_optional(value) for key, value in ma_positions.items()}
+        )
         return self._clean_row(row)
 
     def classify_trend(
-        self, latest: pd.Series, close: float, drawdown_from_52w_high: float, days: int
+        self,
+        latest: pd.Series,
+        close: float,
+        drawdown_from_52w_high: float | None,
+        days: int,
     ) -> str:
         if days < 120:
             return "데이터 부족"
-        ema20 = self._safe_float(latest.get("ema20"))
-        ema60 = self._safe_float(latest.get("ema60"))
-        ma120 = self._safe_float(latest.get("ma120"))
-        ma240 = self._safe_float(latest.get("ma240"))
-        if close > ema20 > ema60 > ma120 and (not ma240 or ma120 > ma240):
+        ema20 = self._finite_float(latest.get("ema20"))
+        ema60 = self._finite_float(latest.get("ema60"))
+        ma120 = self._finite_float(latest.get("ma120"))
+        ma240 = self._finite_float(latest.get("ma240"))
+        if not ema20 or not ema60:
+            return "데이터 부족"
+        if ma120 and close > ema20 > ema60 > ma120 and (not ma240 or ma120 > ma240):
             return "강한 상승 추세"
         if close > ema60 and ema20 >= ema60:
             return "완만한 상승 추세"
@@ -197,7 +236,9 @@ class PortfolioDecisionEngine:
             return "하락 추세"
         if close < ma120 and ma120:
             return "조정 구간"
-        if close < ema60 or drawdown_from_52w_high <= -20:
+        if close < ema60 or (
+            drawdown_from_52w_high is not None and drawdown_from_52w_high <= -20
+        ):
             return "조정 구간"
         return "박스권"
 
@@ -221,7 +262,7 @@ class PortfolioDecisionEngine:
             return "조건부 추가매수 후보"
         if score <= 85:
             return "우선 검토 후보"
-        return "강한 후보이나 비중 제한 필요"
+        return "우선 검토 후보이나 비중 제한 필요"
 
     def _get_history(
         self, data_provider: Any, symbol: str, market: str
@@ -229,41 +270,49 @@ class PortfolioDecisionEngine:
         try:
             return data_provider.get_price_history(symbol, market, period="5y")
         except TypeError:
-            return data_provider.get_price_history(symbol, market, 1260)
+            try:
+                return data_provider.get_price_history(symbol, market, 1260)
+            except Exception as exc:
+                empty = pd.DataFrame()
+                empty.attrs["error"] = str(exc)
+                empty.attrs["data_source"] = "ERROR"
+                return empty
         except Exception as exc:
             empty = pd.DataFrame()
             empty.attrs["error"] = str(exc)
             empty.attrs["data_source"] = "ERROR"
             return empty
 
-    def _period_return(self, df: pd.DataFrame, days: int) -> float:
+    def _period_return(self, df: pd.DataFrame, days: int) -> float | None:
         if days <= 0 or len(df) <= days:
-            return 0.0
-        start = self._safe_float(df.iloc[-days - 1].get("close"))
-        end = self._safe_float(df.iloc[-1].get("close"))
-        return (end / start - 1) * 100 if start else 0.0
+            return None
+        start = self._finite_float(df.iloc[-days - 1].get("close"))
+        end = self._finite_float(df.iloc[-1].get("close"))
+        return (end / start - 1) * 100 if start and end and start > 0 else None
 
-    def _annualized_volatility(self, df: pd.DataFrame) -> float:
+    def _annualized_volatility(self, df: pd.DataFrame) -> float | None:
         returns = df["close"].pct_change().replace([np.inf, -np.inf], np.nan).dropna()
-        if returns.empty:
-            return 0.0
-        return float(returns.std() * np.sqrt(252) * 100)
+        if len(returns) < 2:
+            return None
+        return self._finite_float(returns.std() * np.sqrt(252) * 100)
 
-    def _max_drawdown(self, df: pd.DataFrame) -> float:
+    def _max_drawdown(self, df: pd.DataFrame) -> float | None:
         close = df["close"].astype(float)
-        drawdown = close / close.cummax() - 1
-        return float(drawdown.min() * 100)
+        if close.empty or close.max() <= 0:
+            return None
+        drawdown = close / close.cummax().replace(0, np.nan) - 1
+        return self._finite_float(drawdown.min() * 100)
 
-    def _ma_position(self, close: float, ma_value: Any) -> float:
-        ma = self._safe_float(ma_value)
-        return (close / ma - 1) * 100 if close and ma else 0.0
+    def _ma_position(self, close: float, ma_value: Any) -> float | None:
+        ma = self._finite_float(ma_value)
+        return (close / ma - 1) * 100 if ma and ma > 0 else None
 
     def _sell_review_score(
         self,
         weight: float,
         total_pnl_pct: float,
         rsi: float,
-        ma_positions: dict[str, float],
+        ma_positions: dict[str, float | None],
         drawdown_from_52w_high: float,
         mdd: float,
         volatility: float,
@@ -284,7 +333,7 @@ class PortfolioDecisionEngine:
             ("ma120_position", 14),
             ("ma240_position", 16),
         ]:
-            if ma_positions.get(key, 0) < 0:
+            if self._score_float(ma_positions.get(key), 0) < 0:
                 score += penalty
         if drawdown_from_52w_high <= -25:
             score += 14
@@ -313,7 +362,7 @@ class PortfolioDecisionEngine:
         trend_status: str,
         rsi: float,
         volatility: float,
-        ma_positions: dict[str, float],
+        ma_positions: dict[str, float | None],
         return_3m: float,
         risk_tag: str,
         reliability: str,
@@ -334,7 +383,7 @@ class PortfolioDecisionEngine:
         if rsi >= 75:
             score -= 12
         if all(
-            ma_positions.get(key, 0) >= -3
+            self._score_float(ma_positions.get(key), -999) >= -3
             for key in ["ma60_position", "ma120_position"]
         ):
             score += 8
@@ -343,7 +392,7 @@ class PortfolioDecisionEngine:
         if weight <= 15:
             score += 8
         elif weight >= 30:
-            score -= 12
+            score -= 16
         if volatility <= 28:
             score += 8
         elif volatility >= 45:
@@ -359,6 +408,8 @@ class PortfolioDecisionEngine:
             score += 5
         if reliability == "HIGH":
             score += 5
+        elif reliability == "MEDIUM":
+            score -= 6
         elif reliability == "LOW":
             score -= 14
         elif reliability == "UNKNOWN":
@@ -378,7 +429,12 @@ class PortfolioDecisionEngine:
         return "HIGH", "외부 데이터이며 3년 이상 기간을 확보했습니다."
 
     def _empty_position_row(
-        self, position: dict[str, Any], name: str, data_source: str, provider: str
+        self,
+        position: dict[str, Any],
+        name: str,
+        data_source: str,
+        provider: str,
+        reason: str,
     ) -> dict[str, Any]:
         symbol = str(position.get("symbol", "")).upper()
         market = str(position.get("market", "KR")).upper()
@@ -401,12 +457,12 @@ class PortfolioDecisionEngine:
                 "data_source": data_source or "UNKNOWN",
                 "provider": provider,
                 "reliability": "UNKNOWN",
-                "reliability_reason": "분석 가능한 가격 데이터가 부족합니다.",
+                "reliability_reason": reason,
                 "sell_review_score": 50.0,
                 "sell_review_opinion": "관망 / 추세 점검",
                 "additional_buy_score": 20.0,
                 "additional_buy_opinion": "추가매수 부적합 / 관망",
-                "decision_comment": f"{symbol}은 데이터 부족으로 추세 점검이 필요합니다.",
+                "decision_comment": f"{symbol}은 {reason} 추세 점검이 필요합니다.",
             }
         )
 
@@ -498,7 +554,7 @@ class PortfolioDecisionEngine:
         if history.empty or "close" not in history or "date" not in history:
             return []
         view = history.sort_values("date").tail(MIN_THREE_YEAR_DAYS).copy()
-        first_close = self._safe_float(view.iloc[0].get("close"))
+        first_close = self._finite_float(view.iloc[0].get("close"))
         if not first_close:
             return []
         view["normalized_price"] = view["close"] / first_close * 100
@@ -507,7 +563,7 @@ class PortfolioDecisionEngine:
                 "date": row["date"],
                 "symbol": symbol,
                 "market": market,
-                "close": round(self._safe_float(row["close"]), 2),
+                "close": self._round_optional(self._finite_float(row["close"])),
                 "normalized_price": round(self._safe_float(row["normalized_price"]), 2),
                 "data_source": row.get(
                     "data_source", history.attrs.get("data_source", "")
@@ -530,6 +586,16 @@ class PortfolioDecisionEngine:
             comments.append(
                 "ETF 중심 포트폴리오로 개별 종목 리스크는 상대적으로 낮게 분산되어 있습니다."
             )
+        semiconductor = frame[
+            frame["name"]
+            .astype(str)
+            .str.contains("반도체|SEMICONDUCTOR", case=False, na=False)
+        ]
+        if (
+            not semiconductor.empty
+            and semiconductor["position_weight_krw"].astype(float).sum() >= 30
+        ):
+            comments.append("반도체 테마 비중이 높아 섹터 변동성 점검이 필요합니다.")
         high_sell = frame.sort_values("sell_review_score", ascending=False).head(1)
         high_buy = frame.sort_values("additional_buy_score", ascending=False).head(1)
         if not high_sell.empty:
@@ -589,11 +655,32 @@ class PortfolioDecisionEngine:
         except (TypeError, ValueError):
             return default
 
+    def _finite_float(self, value: Any) -> float | None:
+        try:
+            result = float(value)
+            if np.isnan(result) or np.isinf(result):
+                return None
+            return result
+        except (TypeError, ValueError):
+            return None
+
+    def _score_float(self, value: Any, default: float = 0.0) -> float:
+        result = self._finite_float(value)
+        return default if result is None else result
+
+    def _round_optional(self, value: float | None) -> float | None:
+        return round(value, 2) if value is not None else None
+
+    def _has_required_price_columns(self, history: pd.DataFrame) -> bool:
+        return {"date", "open", "high", "low", "close", "volume"}.issubset(
+            history.columns
+        )
+
     def _clean_row(self, row: dict[str, Any]) -> dict[str, Any]:
         cleaned = {}
         for key, value in row.items():
             if isinstance(value, float) and (np.isnan(value) or np.isinf(value)):
-                cleaned[key] = 0.0
+                cleaned[key] = None
             else:
                 cleaned[key] = value
         return cleaned
