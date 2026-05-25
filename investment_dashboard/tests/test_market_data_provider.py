@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from src.data_providers.base import BaseDataProvider, Quote, empty_price_history
+from src.data_providers.base import BaseDataProvider, FXRate, Quote, empty_price_history
 from src.data_providers.external_market_data_provider import ExternalMarketDataProvider
 from src.data_providers.market_data_provider import MarketDataProvider
 
@@ -41,6 +41,16 @@ class FailingRealProvider(BaseDataProvider):
 
     def is_sample_mode(self) -> bool:
         return False
+
+    def get_fx_rate(self, pair: str = "USD/KRW") -> FXRate:
+        return FXRate(
+            pair=pair,
+            rate=None,
+            data_source="REAL_FX_ERROR",
+            provider=self.get_provider_name(),
+            as_of="2026-01-02T00:00:00",
+            error="fx network disabled",
+        )
 
 
 class EmptyRealProvider(FailingRealProvider):
@@ -97,6 +107,16 @@ class SuccessfulRealProvider(FailingRealProvider):
 
     def get_provider_name(self) -> str:
         return "SuccessfulRealProvider"
+
+    def get_fx_rate(self, pair: str = "USD/KRW") -> FXRate:
+        return FXRate(
+            pair=pair,
+            rate=1325.5,
+            data_source="YFINANCE_FX",
+            provider=self.get_provider_name(),
+            as_of="2026-01-02T00:00:00",
+            error=None,
+        )
 
 
 def test_real_with_fallback_uses_sample_when_real_history_fails() -> None:
@@ -163,3 +183,33 @@ def test_external_provider_uses_yfinance_ticker_candidates() -> None:
     assert provider._ticker_candidates("AAPL", "US") == ["AAPL"]
     assert provider._ticker_candidates("005930", "KR") == ["005930.KS", "005930.KQ"]
     assert provider._ticker_candidates("091990.KQ", "KR") == ["091990.KQ"]
+
+
+def test_sample_mode_fx_rate_returns_sample_fx() -> None:
+    provider = MarketDataProvider(mode="SAMPLE")
+
+    fx = provider.get_fx_rate("USD/KRW")
+
+    assert fx.pair == "USD/KRW"
+    assert fx.rate == 1350.0
+    assert fx.data_source == "SAMPLE_FX"
+    assert fx.error is None
+
+
+def test_real_with_fallback_fx_uses_sample_when_real_fails() -> None:
+    provider = MarketDataProvider(
+        mode="REAL_WITH_FALLBACK", real_provider=FailingRealProvider()
+    )
+
+    fx = provider.get_fx_rate("USD/KRW")
+
+    assert fx.rate == 1350.0
+    assert fx.data_source == "SAMPLE_FX_FALLBACK"
+    assert fx.error == "fx network disabled"
+
+
+def test_real_provider_fx_failure_can_return_none_without_fallback() -> None:
+    fx = FailingRealProvider().get_fx_rate("USD/KRW")
+
+    assert fx.rate is None
+    assert fx.error == "fx network disabled"

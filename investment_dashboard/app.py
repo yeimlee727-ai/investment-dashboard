@@ -312,45 +312,67 @@ def render_paper_trading_summary(provider: MarketDataProvider) -> None:
         positions = broker.get_positions()
         summary = {
             "position_count": len(positions),
-            "total_market_value": sum(
-                float(p["market_value"])
+            "total_market_value_krw": sum(
+                float(p["market_value_krw"])
                 for p in positions
-                if p.get("market_value") is not None
+                if p.get("market_value_krw") is not None
             ),
-            "total_cost_basis": sum(
-                float(p.get("avg_price", 0)) * int(p.get("quantity", 0))
+            "total_cost_basis_krw": sum(
+                float(p["cost_basis_krw"])
                 for p in positions
+                if p.get("cost_basis_krw") is not None
             ),
-            "total_unrealized_pnl": sum(
-                float(p["unrealized_pnl"])
+            "total_unrealized_pnl_krw": sum(
+                float(p["unrealized_pnl_krw"])
                 for p in positions
-                if p.get("unrealized_pnl") is not None
+                if p.get("unrealized_pnl_krw") is not None
             ),
-            "total_realized_pnl": sum(
-                float(p.get("realized_pnl", 0)) for p in positions
+            "total_realized_pnl_krw": sum(
+                float(p["realized_pnl_krw"])
+                for p in positions
+                if p.get("realized_pnl_krw") is not None
             ),
-            "top1_weight": 0,
+            "total_pnl_krw": sum(
+                float(p["total_pnl_krw"])
+                for p in positions
+                if p.get("total_pnl_krw") is not None
+            ),
+            "top1_weight_krw": 0,
             "quote_error_count": sum(1 for p in positions if p.get("quote_error")),
+            "fx_error_count": sum(1 for p in positions if p.get("fx_error")),
+            "fx_rate": None,
         }
     if int(summary.get("position_count") or 0) == 0:
         st.info(
             "모의매매 포지션이 없습니다. 모의매매 페이지에서 가상 주문을 실행할 수 있습니다."
         )
         return
-    cols = st.columns(7)
+    cols = st.columns(8)
     cols[0].metric("보유 종목 수", int(summary.get("position_count") or 0))
     cols[1].metric(
-        "총 평가금액", f"{float(summary.get('total_market_value') or 0):,.0f}"
+        "총 평가금액 KRW",
+        f"{float(summary.get('total_market_value_krw') or 0):,.0f}",
     )
-    cols[2].metric("총 매입금액", f"{float(summary.get('total_cost_basis') or 0):,.0f}")
+    cols[2].metric(
+        "총 매입금액 KRW",
+        f"{float(summary.get('total_cost_basis_krw') or 0):,.0f}",
+    )
     cols[3].metric(
-        "총 평가손익", f"{float(summary.get('total_unrealized_pnl') or 0):,.0f}"
+        "총 손익 KRW",
+        f"{float(summary.get('total_pnl_krw') or 0):,.0f}",
     )
     cols[4].metric(
-        "총 실현손익", f"{float(summary.get('total_realized_pnl') or 0):,.0f}"
+        "상위 1개 비중 KRW",
+        f"{float(summary.get('top1_weight_krw') or 0):.2f}%",
     )
-    cols[5].metric("상위 1개 비중", f"{float(summary.get('top1_weight') or 0):.2f}%")
-    cols[6].metric("Quote error", int(summary.get("quote_error_count") or 0))
+    cols[5].metric("Quote error", int(summary.get("quote_error_count") or 0))
+    cols[6].metric("FX error", int(summary.get("fx_error_count") or 0))
+    cols[7].metric(
+        "USD/KRW",
+        f"{float(summary['fx_rate']):,.2f}" if summary.get("fx_rate") else "-",
+    )
+    if summary.get("fx_error_count"):
+        st.warning("환율 조회 실패로 일부 US 포지션의 원화 환산 평가가 제한됩니다.")
 
 
 def render_navigation_guide() -> None:

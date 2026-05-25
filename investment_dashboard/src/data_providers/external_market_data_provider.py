@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from src.data_providers.base import BaseDataProvider, Quote, empty_price_history
+from src.data_providers.base import BaseDataProvider, FXRate, Quote, empty_price_history
 
 
 class ExternalMarketDataProvider(BaseDataProvider):
@@ -122,6 +122,56 @@ class ExternalMarketDataProvider(BaseDataProvider):
 
     def is_sample_mode(self) -> bool:
         return False
+
+    def get_fx_rate(self, pair: str = "USD/KRW") -> FXRate:
+        normalized_pair = pair.upper()
+        if normalized_pair != "USD/KRW":
+            return FXRate(
+                pair=normalized_pair,
+                rate=None,
+                data_source="REAL_FX_UNSUPPORTED",
+                provider=self.get_provider_name(),
+                as_of=datetime.now().isoformat(timespec="seconds"),
+                error="외부 provider는 USD/KRW만 지원합니다.",
+            )
+        if self._yf is None:
+            return FXRate(
+                pair="USD/KRW",
+                rate=None,
+                data_source="REAL_FX_UNAVAILABLE",
+                provider=self.get_provider_name(),
+                as_of=datetime.now().isoformat(timespec="seconds"),
+                error="yfinance가 설치되어 있지 않습니다.",
+            )
+        try:
+            raw = self._yf.Ticker("KRW=X").history(period="5d", auto_adjust=False)
+            if raw.empty or "Close" not in raw:
+                return FXRate(
+                    pair="USD/KRW",
+                    rate=None,
+                    data_source="REAL_FX_NO_DATA",
+                    provider=self.get_provider_name(),
+                    as_of=datetime.now().isoformat(timespec="seconds"),
+                    error="외부 provider가 빈 USD/KRW 환율 데이터를 반환했습니다.",
+                )
+            latest = raw.dropna(subset=["Close"]).iloc[-1]
+            return FXRate(
+                pair="USD/KRW",
+                rate=float(latest["Close"]),
+                data_source="YFINANCE_FX",
+                provider=self.get_provider_name(),
+                as_of=datetime.now().isoformat(timespec="seconds"),
+                error=None,
+            )
+        except Exception as exc:
+            return FXRate(
+                pair="USD/KRW",
+                rate=None,
+                data_source="REAL_FX_ERROR",
+                provider=self.get_provider_name(),
+                as_of=datetime.now().isoformat(timespec="seconds"),
+                error=str(exc),
+            )
 
     def _failed_quote(self, symbol: str, market: str, error: str) -> Quote:
         return Quote(

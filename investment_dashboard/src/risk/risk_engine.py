@@ -64,15 +64,17 @@ class RiskEngine:
         valued_positions = [
             position
             for position in positions
-            if position.get("market_value") is not None
+            if self._valuation_value(position) is not None
         ]
         total_market_value = sum(
-            float(position["market_value"]) for position in valued_positions
+            float(self._valuation_value(position) or 0) for position in valued_positions
         )
         weights = (
             sorted(
                 [
-                    float(position["market_value"]) / total_market_value * 100
+                    float(self._valuation_value(position) or 0)
+                    / total_market_value
+                    * 100
                     for position in valued_positions
                 ],
                 reverse=True,
@@ -81,9 +83,9 @@ class RiskEngine:
             else []
         )
         unrealized_values = [
-            float(position["unrealized_pnl"])
+            float(self._unrealized_value(position))
             for position in positions
-            if position.get("unrealized_pnl") is not None
+            if self._unrealized_value(position) is not None
         ]
         return {
             "top1_weight": round(weights[0], 2) if weights else 0.0,
@@ -99,3 +101,17 @@ class RiskEngine:
             "daily_realized_pnl": round(current_daily_pnl, 2),
             "daily_loss_usage_pct": self.daily_loss_usage_pct(current_daily_pnl),
         }
+
+    def _valuation_value(self, position: dict[str, Any]) -> float | None:
+        if "market_value_krw" in position:
+            value = position.get("market_value_krw")
+        else:
+            value = position.get("market_value")
+        return float(value) if value is not None else None
+
+    def _unrealized_value(self, position: dict[str, Any]) -> float | None:
+        if "unrealized_pnl_krw" in position:
+            value = position.get("unrealized_pnl_krw")
+        else:
+            value = position.get("unrealized_pnl")
+        return float(value) if value is not None else None

@@ -45,6 +45,19 @@ class Quote:
         return payload
 
 
+@dataclass(frozen=True)
+class FXRate:
+    pair: str
+    rate: float | None
+    data_source: str
+    provider: str
+    as_of: datetime | str | None
+    error: str | None = None
+
+    def to_dict(self) -> dict[str, float | str | None]:
+        return asdict(self)
+
+
 class BaseDataProvider(ABC):
     @abstractmethod
     def get_price_history(
@@ -68,6 +81,16 @@ class BaseDataProvider(ABC):
         self, symbol: str, market: str = "KR"
     ) -> dict[str, float | str | None]:
         return self.get_latest_quote(symbol=symbol, market=market).to_dict()
+
+    def get_fx_rate(self, pair: str = "USD/KRW") -> FXRate:
+        return FXRate(
+            pair=pair,
+            rate=None,
+            data_source="FX_UNAVAILABLE",
+            provider=self.get_provider_name(),
+            as_of=datetime.now().isoformat(timespec="seconds"),
+            error="환율 조회를 지원하지 않는 provider입니다.",
+        )
 
 
 DataProvider = BaseDataProvider

@@ -10,11 +10,16 @@ from src.broker.base import OrderRequest
 from src.broker.mock_broker import MockBroker
 from src.database import init_db
 from src.risk.risk_engine import RiskConfig, RiskEngine
-from src.ui_helpers import build_market_data_provider, render_data_warning
+from src.ui_helpers import (
+    build_market_data_provider,
+    get_fx_status_message,
+    render_data_warning,
+)
 
 POSITION_COLUMNS = [
     "market",
     "symbol",
+    "currency",
     "quantity",
     "avg_price",
     "current_price",
@@ -25,7 +30,15 @@ POSITION_COLUMNS = [
     "realized_pnl",
     "total_pnl",
     "total_pnl_pct",
-    "position_weight",
+    "fx_rate",
+    "market_value_krw",
+    "cost_basis_krw",
+    "unrealized_pnl_krw",
+    "realized_pnl_krw",
+    "total_pnl_krw",
+    "position_weight_krw",
+    "fx_data_source",
+    "fx_error",
     "quote_error",
     "updated_at",
 ]
@@ -38,28 +51,57 @@ def as_dataframe(rows: list[dict[str, object]]) -> pd.DataFrame:
 def render_summary_cards(summary: dict[str, object]) -> None:
     rows = [
         [
-            ("총 평가금액", f"{float(summary['total_market_value']):,.0f}"),
-            ("총 매입금액", f"{float(summary['total_cost_basis']):,.0f}"),
-            ("총 평가손익", f"{float(summary['total_unrealized_pnl']):,.0f}"),
+            ("총 평가금액 KRW", f"{float(summary['total_market_value_krw']):,.0f}"),
+            ("총 매입금액 KRW", f"{float(summary['total_cost_basis_krw']):,.0f}"),
+            ("총 평가손익 KRW", f"{float(summary['total_unrealized_pnl_krw']):,.0f}"),
             ("총 평가손익률", f"{float(summary['total_unrealized_pnl_pct']):.2f}%"),
         ],
         [
-            ("총 실현손익", f"{float(summary['total_realized_pnl']):,.0f}"),
-            ("총 손익", f"{float(summary['total_pnl']):,.0f}"),
+            ("총 실현손익 KRW", f"{float(summary['total_realized_pnl_krw']):,.0f}"),
+            ("총 손익 KRW", f"{float(summary['total_pnl_krw']):,.0f}"),
             ("보유 종목 수", f"{int(summary['position_count'])}"),
             ("현금 잔액", "추적 없음"),
         ],
         [
-            ("상위 1개 비중", f"{float(summary['top1_weight']):.2f}%"),
+            ("상위 1개 비중 KRW", f"{float(summary['top1_weight_krw']):.2f}%"),
             ("최대 손실 종목", str(summary["max_loss_symbol"] or "-")),
             ("최대 수익 종목", str(summary["max_profit_symbol"] or "-")),
             ("현재가 오류", f"{int(summary['quote_error_count'])}건"),
+        ],
+        [
+            (
+                "USD/KRW 환율",
+                (
+                    f"{float(summary['fx_rate']):,.2f}"
+                    if summary.get("fx_rate")
+                    else "표시 불가"
+                ),
+            ),
+            ("환율 출처", str(summary.get("fx_data_source") or "-")),
+            ("환율 오류", f"{int(summary['fx_error_count'])}건"),
+            ("원화 환산 기준", "참고용"),
         ],
     ]
     for row in rows:
         cols = st.columns(len(row))
         for col, (label, value) in zip(cols, row, strict=True):
             col.metric(label, value)
+
+
+def render_fx_status(
+    rate: float | None, data_source: str, as_of: object, error: str | None
+) -> None:
+    st.subheader("USD/KRW 환율 상태")
+    cols = st.columns(4)
+    cols[0].metric("USD/KRW 환율", f"{rate:,.2f}" if rate else "표시 불가")
+    cols[1].metric("환율 출처", data_source or "-")
+    cols[2].metric("기준 시각", str(as_of or "-"))
+    cols[3].metric("환율 오류", "있음" if error else "없음")
+    message = get_fx_status_message(rate, data_source, error)
+    if error or rate is None:
+        st.warning(message)
+    else:
+        st.info(message)
 
 
 def render_risk_status(
@@ -90,21 +132,28 @@ def render_position_charts(positions: pd.DataFrame) -> None:
     if positions.empty:
         st.info("표시할 가상 포지션이 없습니다.")
         return
-    chart_data = positions.dropna(subset=["market_value"]).copy()
+    chart_data = positions.dropna(subset=["market_value_krw"]).copy()
     if chart_data.empty:
-        st.warning("현재가 조회 실패로 평가금액 차트를 표시할 수 없습니다.")
+        st.warning("현재가 또는 환율 조회 실패로 원화 환산 차트를 표시할 수 없습니다.")
         return
     chart_data["ticker"] = chart_data["market"] + ":" + chart_data["symbol"]
     st.plotly_chart(
-        px.bar(chart_data, x="ticker", y="market_value", title="포지션별 평가금액"),
+        px.bar(
+            chart_data, x="ticker", y="market_value_krw", title="포지션별 평가금액 KRW"
+        ),
         width="stretch",
     )
     st.plotly_chart(
-        px.bar(chart_data, x="ticker", y="total_pnl", title="포지션별 총손익"),
+        px.bar(chart_data, x="ticker", y="total_pnl_krw", title="포지션별 총손익 KRW"),
         width="stretch",
     )
     st.plotly_chart(
-        px.pie(chart_data, names="ticker", values="market_value", title="종목별 비중"),
+        px.pie(
+            chart_data,
+            names="ticker",
+            values="market_value_krw",
+            title="종목별 비중 KRW",
+        ),
         width="stretch",
     )
 
@@ -188,6 +237,23 @@ def main() -> None:
 
     risk_engine = RiskEngine(RiskConfig())
     broker = MockBroker(risk_engine=risk_engine, data_provider=provider)
+
+    use_manual_fx = st.checkbox("수동 USD/KRW 환율 사용")
+    manual_fx_rate = None
+    if use_manual_fx:
+        manual_fx_rate = st.number_input(
+            "USD/KRW 환율",
+            min_value=1.0,
+            value=1350.0,
+            step=1.0,
+            help="사용자가 입력한 모의 평가 기준이며 실제 환율을 보장하지 않습니다.",
+        )
+        render_fx_status(float(manual_fx_rate), "MANUAL", "사용자 입력", None)
+        st.caption("수동 환율은 실제 환율이 아니라 사용자가 입력한 평가 기준입니다.")
+    else:
+        fx = provider.get_fx_rate("USD/KRW")
+        render_fx_status(fx.rate, fx.data_source, fx.as_of, fx.error)
+
     with st.form("virtual_order"):
         col1, col2, col3, col4, col5 = st.columns(5)
         symbol = col1.text_input("종목코드", value="005930")
@@ -224,10 +290,18 @@ def main() -> None:
         if manual_price > 0
         else {}
     )
-    positions = broker.get_positions(current_prices=price_overrides)
+    positions = broker.get_positions(
+        current_prices=price_overrides, manual_fx_rate=manual_fx_rate
+    )
     positions_df = as_dataframe(positions)
-    summary = broker.get_portfolio_summary(current_prices=price_overrides)
+    summary = broker.get_portfolio_summary(
+        current_prices=price_overrides, manual_fx_rate=manual_fx_rate
+    )
     render_summary_cards(summary)
+    if summary.get("fx_error_count"):
+        st.warning(
+            "환율 조회 실패로 일부 US 종목의 원화 환산 평가가 제한됩니다. fx_error 컬럼을 확인하세요."
+        )
 
     daily_pnl = broker.get_daily_realized_pnl()
     risk_metrics = risk_engine.portfolio_risk_metrics(positions, daily_pnl)
@@ -242,6 +316,13 @@ def main() -> None:
         if positions_df["quote_error"].dropna().astype(bool).any():
             st.warning(
                 "일부 가상 포지션은 현재가 조회에 실패했습니다. quote_error 컬럼을 확인하세요."
+            )
+        if (
+            "fx_error" in positions_df
+            and positions_df["fx_error"].dropna().astype(bool).any()
+        ):
+            st.warning(
+                "일부 US 가상 포지션은 환율 조회에 실패했습니다. fx_error 컬럼을 확인하세요."
             )
     else:
         st.info("보유 중인 가상 포지션이 없습니다.")
