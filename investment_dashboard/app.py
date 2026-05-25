@@ -14,6 +14,7 @@ from src.data_providers.base import DataMode, Quote
 from src.data_providers.market_data_provider import MarketDataProvider
 from src.models import WatchlistItem
 from src.scanner.stock_scanner import StockScanner
+from src.scoring.portfolio_decision_engine import PortfolioDecisionEngine
 from src.scoring.scoring_engine import ScoringEngine
 from src.ui_helpers import (
     build_market_data_provider,
@@ -29,6 +30,10 @@ PAGE_GUIDE = [
     ("DART공시", "공시 유형과 위험 신호를 확인합니다."),
     ("백테스트", "전략 성과를 리포트 형태로 검증합니다."),
     ("모의매매", "MockBroker 기반 가상 주문과 포지션을 확인합니다."),
+    (
+        "포트폴리오전략",
+        "보유 가상 포지션의 추가매수 후보와 매도 검토 신호를 점검합니다.",
+    ),
 ]
 
 
@@ -378,6 +383,61 @@ def render_paper_trading_summary(provider: MarketDataProvider) -> None:
         st.warning("환율 조회 실패로 일부 US 포지션의 원화 환산 평가가 제한됩니다.")
 
 
+def render_portfolio_decision_summary(provider: MarketDataProvider) -> None:
+    st.subheader("포트폴리오 전략분석 요약")
+    broker = MockBroker(data_provider=provider)
+    positions = broker.get_positions()
+    if not positions:
+        st.info(
+            "분석할 모의매매 포지션이 없습니다. 자세히 보기: 포트폴리오 전략분석 페이지"
+        )
+        return
+    try:
+        result = PortfolioDecisionEngine().analyze(positions, provider)
+    except Exception as exc:
+        st.warning(f"포트폴리오 전략분석 요약을 생성하지 못했습니다: {exc}")
+        return
+    frame = result.positions
+    if frame.empty:
+        st.info("포트폴리오 전략분석 결과가 없습니다.")
+        return
+    cols = st.columns(4)
+    cols[0].metric(
+        "상위 1개 비중", f"{float(result.portfolio_summary.get('top1_weight', 0)):.2f}%"
+    )
+    cols[1].metric(
+        "상위 3개 비중", f"{float(result.portfolio_summary.get('top3_weight', 0)):.2f}%"
+    )
+    cols[2].metric(
+        "데이터 신뢰도", str(result.portfolio_summary.get("reliability", "UNKNOWN"))
+    )
+    cols[3].metric("분석 종목 수", len(frame))
+    st.caption("자세히 보기: 포트폴리오 전략분석 페이지")
+    display_columns = [
+        "symbol",
+        "market",
+        "additional_buy_score",
+        "additional_buy_opinion",
+        "sell_review_score",
+        "sell_review_opinion",
+        "reliability",
+    ]
+    buy = frame.sort_values("additional_buy_score", ascending=False).head(3)
+    sell = frame.sort_values("sell_review_score", ascending=False).head(3)
+    st.write("추가매수 우선 후보")
+    st.dataframe(
+        localize_columns(buy[[col for col in display_columns if col in buy.columns]]),
+        hide_index=True,
+        width="stretch",
+    )
+    st.write("매도 검토 신호 상위")
+    st.dataframe(
+        localize_columns(sell[[col for col in display_columns if col in sell.columns]]),
+        hide_index=True,
+        width="stretch",
+    )
+
+
 def render_navigation_guide() -> None:
     st.subheader("페이지 이동 안내")
     st.caption("왼쪽 사이드바의 Pages 메뉴에서 각 기능 페이지로 이동할 수 있습니다.")
@@ -430,6 +490,7 @@ def main() -> None:
     with right:
         render_paper_trading_summary(provider)
 
+    render_portfolio_decision_summary(provider)
     render_navigation_guide()
 
 
