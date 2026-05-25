@@ -11,11 +11,16 @@ from src.backtest.backtest_engine import BacktestEngine, BacktestResult
 from src.data_providers.base import DataMode
 from src.data_providers.market_data_provider import MarketDataProvider
 from src.ui_helpers import (
+    apply_plotly_dark_theme,
     build_market_data_provider,
+    format_display_dataframe,
     format_avg_profit_loss_ratio,
     format_profit_factor,
     get_backtest_warning_messages,
+    inject_global_css,
     render_data_warning,
+    render_metric_card,
+    render_page_header,
 )
 
 
@@ -82,8 +87,9 @@ def render_metric_grid(result: BacktestResult) -> None:
     for row in rows:
         cols = st.columns(len(row))
         for col, (label, value) in zip(cols, row, strict=True):
-            col.metric(label, value)
-    st.metric("평균 보유기간", f"{result.average_holding_days:.1f}일")
+            with col:
+                render_metric_card(label, value)
+    render_metric_card("평균 보유기간", f"{result.average_holding_days:.1f}일")
 
 
 def render_result_warnings(result: BacktestResult, data_source: str | None) -> None:
@@ -132,7 +138,7 @@ def render_equity_report(result: BacktestResult) -> None:
             )
         )
     fig.update_layout(yaxis_title="초기자본 대비 평가자산")
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(apply_plotly_dark_theme(fig), width="stretch")
 
     drawdown_fig = px.area(
         equity,
@@ -141,7 +147,7 @@ def render_equity_report(result: BacktestResult) -> None:
         title="Drawdown curve",
         labels={"drawdown_pct": "Drawdown (%)", "date": "date"},
     )
-    st.plotly_chart(drawdown_fig, width="stretch")
+    st.plotly_chart(apply_plotly_dark_theme(drawdown_fig), width="stretch")
 
 
 def render_trade_log(result: BacktestResult) -> None:
@@ -160,48 +166,55 @@ def render_trade_log(result: BacktestResult) -> None:
         "slippage",
     ]
     trades = result.trades[[col for col in trade_columns if col in result.trades]]
-    st.dataframe(trades, hide_index=True, width="stretch")
+    st.dataframe(format_display_dataframe(trades), hide_index=True, width="stretch")
 
 
 def main() -> None:
     st.set_page_config(page_title="백테스트", layout="wide")
-    st.title("백테스트")
+    inject_global_css()
+    render_page_header(
+        "백테스트",
+        "전략 결과를 수익률, MDD, 거래 로그, equity curve 중심으로 검증합니다.",
+        badges=[("전략 검증 참고자료", "info"), ("미래 성과 단정 아님", "warning")],
+    )
     provider = build_market_data_provider()
     render_data_warning(provider)
-    col1, col2, col3 = st.columns(3)
-    symbol = col1.text_input("종목코드", value="005930")
-    market = col2.selectbox("시장", ["KR", "US"])
-    strategy = col3.selectbox("전략", STRATEGIES)
-    uploaded = st.file_uploader(
-        "CSV 업로드(date, open, high, low, close, volume)", type=["csv"]
-    )
-    initial_cash = st.number_input(
-        "초기자금", min_value=100_000, value=10_000_000, step=100_000
-    )
-    fee_rate = st.number_input(
-        "수수료율",
-        min_value=0.0,
-        max_value=0.01,
-        value=0.00015,
-        step=0.00005,
-        format="%.5f",
-    )
-    slippage_rate = st.number_input(
-        "슬리피지율",
-        min_value=0.0,
-        max_value=0.02,
-        value=0.0005,
-        step=0.0001,
-        format="%.5f",
-    )
-    position_size_pct = st.slider(
-        "1회 진입 비중", min_value=0.05, max_value=1.0, value=0.2, step=0.05
-    )
-    stop_take_basis_label = st.radio(
-        "손절/익절 판정 기준",
-        ["종가 기준 백테스트", "장중 터치 기준 백테스트"],
-        horizontal=True,
-    )
+    with st.container(border=True):
+        st.subheader("백테스트 입력")
+        col1, col2, col3 = st.columns(3)
+        symbol = col1.text_input("종목코드", value="005930")
+        market = col2.selectbox("시장", ["KR", "US"])
+        strategy = col3.selectbox("전략", STRATEGIES)
+        uploaded = st.file_uploader(
+            "CSV 업로드(date, open, high, low, close, volume)", type=["csv"]
+        )
+        initial_cash = st.number_input(
+            "초기자금", min_value=100_000, value=10_000_000, step=100_000
+        )
+        fee_rate = st.number_input(
+            "수수료율",
+            min_value=0.0,
+            max_value=0.01,
+            value=0.00015,
+            step=0.00005,
+            format="%.5f",
+        )
+        slippage_rate = st.number_input(
+            "슬리피지율",
+            min_value=0.0,
+            max_value=0.02,
+            value=0.0005,
+            step=0.0001,
+            format="%.5f",
+        )
+        position_size_pct = st.slider(
+            "1회 진입 비중", min_value=0.05, max_value=1.0, value=0.2, step=0.05
+        )
+        stop_take_basis_label = st.radio(
+            "손절/익절 판정 기준",
+            ["종가 기준 백테스트", "장중 터치 기준 백테스트"],
+            horizontal=True,
+        )
     stop_take_basis = (
         "intraday" if stop_take_basis_label == "장중 터치 기준 백테스트" else "close"
     )
@@ -256,7 +269,7 @@ def main() -> None:
                 )
                 comparison.append(result_summary(strategy_name, comparison_result))
             st.dataframe(
-                pd.DataFrame(comparison),
+                format_display_dataframe(pd.DataFrame(comparison)),
                 hide_index=True,
                 width="stretch",
             )

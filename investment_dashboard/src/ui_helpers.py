@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from src.data_providers.base import DataMode
@@ -125,6 +126,16 @@ RELIABILITY_LABELS = {
     "UNKNOWN": "알 수 없음",
 }
 
+TONE_COLORS = {
+    "neutral": "#94a3b8",
+    "info": "#38bdf8",
+    "success": "#22c55e",
+    "warning": "#f59e0b",
+    "danger": "#ef4444",
+    "positive": "#22c55e",
+    "negative": "#ef4444",
+}
+
 PROHIBITED_DECISION_WORDS = [
     "매수 추천",
     "매도 추천",
@@ -136,8 +147,178 @@ PROHIBITED_DECISION_WORDS = [
 ]
 
 
+def inject_global_css() -> None:
+    st.markdown(
+        """
+        <style>
+        :root {
+          --bg: #080b12;
+          --panel: #111827;
+          --panel-soft: #151d2c;
+          --border: rgba(148, 163, 184, 0.22);
+          --text: #e5e7eb;
+          --muted: #94a3b8;
+          --accent: #38bdf8;
+          --good: #22c55e;
+          --bad: #ef4444;
+          --warn: #f59e0b;
+        }
+        .stApp {
+          background:
+            radial-gradient(circle at top left, rgba(56, 189, 248, 0.10), transparent 34rem),
+            linear-gradient(180deg, #080b12 0%, #0b1020 100%);
+          color: var(--text);
+        }
+        section[data-testid="stSidebar"] {
+          background: linear-gradient(180deg, #0b1020 0%, #111827 100%);
+          border-right: 1px solid var(--border);
+        }
+        .block-container { padding-top: 1.25rem; padding-bottom: 3rem; }
+        h1, h2, h3 { letter-spacing: 0; }
+        div[data-testid="stMetric"] {
+          background: linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(15, 23, 42, 0.92));
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          padding: 0.9rem 1rem;
+          box-shadow: 0 12px 30px rgba(0,0,0,0.22);
+        }
+        [data-testid="stMetricValue"] { color: #f8fafc; font-weight: 700; }
+        [data-testid="stMetricLabel"] { color: var(--muted); }
+        div[data-testid="stDataFrame"] {
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          overflow: hidden;
+        }
+        .premium-header, .premium-card, .premium-alert {
+          background: linear-gradient(180deg, rgba(17, 24, 39, 0.94), rgba(15, 23, 42, 0.90));
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          padding: 1rem;
+          box-shadow: 0 16px 40px rgba(0,0,0,0.24);
+        }
+        .premium-header { padding: 1.2rem 1.3rem; margin-bottom: 1rem; }
+        .premium-eyebrow {
+          color: var(--accent);
+          font-size: 0.78rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          margin-bottom: 0.25rem;
+        }
+        .premium-title { font-size: 1.9rem; font-weight: 780; margin: 0; }
+        .premium-desc { color: var(--muted); margin-top: 0.35rem; line-height: 1.5; }
+        .chip-row { display: flex; gap: 0.45rem; flex-wrap: wrap; margin-top: 0.85rem; }
+        .status-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          border: 1px solid currentColor;
+          border-radius: 999px;
+          padding: 0.24rem 0.62rem;
+          font-size: 0.78rem;
+          font-weight: 700;
+          background: rgba(15, 23, 42, 0.72);
+        }
+        .premium-alert {
+          border-left: 4px solid var(--accent);
+          color: #dbeafe;
+          margin: 0.45rem 0;
+        }
+        .premium-alert.warning { border-left-color: var(--warn); color: #fde68a; }
+        .premium-alert.danger { border-left-color: var(--bad); color: #fecaca; }
+        .premium-alert.success { border-left-color: var(--good); color: #bbf7d0; }
+        .metric-card-label { color: var(--muted); font-size: 0.78rem; font-weight: 700; }
+        .metric-card-value { color: #f8fafc; font-size: 1.35rem; font-weight: 780; margin-top: 0.22rem; }
+        .metric-card-delta { font-size: 0.82rem; margin-top: 0.2rem; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def korean_column_name(column: str) -> str:
     return KOREAN_COLUMN_LABELS.get(column, column)
+
+
+def _html_escape(value: object) -> str:
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def render_status_chip(label: str, tone: str = "neutral") -> None:
+    color = TONE_COLORS.get(tone, TONE_COLORS["neutral"])
+    st.markdown(
+        f'<span class="status-chip" style="color:{color}">{_html_escape(label)}</span>',
+        unsafe_allow_html=True,
+    )
+
+
+def render_page_header(
+    title: str,
+    description: str,
+    badges: list[tuple[str, str]] | None = None,
+    eyebrow: str = "Investment Dashboard",
+) -> None:
+    chips = "".join(
+        (
+            f'<span class="status-chip" style="color:{TONE_COLORS.get(tone, TONE_COLORS["neutral"])}">'
+            f"{_html_escape(label)}</span>"
+        )
+        for label, tone in (badges or [])
+    )
+    st.markdown(
+        f"""
+        <div class="premium-header">
+          <div class="premium-eyebrow">{_html_escape(eyebrow)}</div>
+          <div class="premium-title">{_html_escape(title)}</div>
+          <div class="premium-desc">{_html_escape(description)}</div>
+          <div class="chip-row">{chips}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_metric_card(
+    label: str,
+    value: object,
+    delta: object | None = None,
+    tone: str = "neutral",
+    help_text: str | None = None,
+) -> None:
+    color = TONE_COLORS.get(tone, TONE_COLORS["neutral"])
+    delta_html = (
+        f'<div class="metric-card-delta" style="color:{color}">{_html_escape(delta)}</div>'
+        if delta is not None
+        else ""
+    )
+    help_html = (
+        f'<div class="premium-desc" style="font-size:0.78rem">{_html_escape(help_text)}</div>'
+        if help_text
+        else ""
+    )
+    st.markdown(
+        f"""
+        <div class="premium-card">
+          <div class="metric-card-label">{_html_escape(label)}</div>
+          <div class="metric-card-value">{_html_escape(value)}</div>
+          {delta_html}
+          {help_html}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_alert(message: str, tone: str = "info") -> None:
+    st.markdown(
+        f'<div class="premium-alert {tone}">{_html_escape(message)}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def localize_columns(
@@ -164,11 +345,66 @@ def format_calculation_value(value: object) -> object:
     return value
 
 
+def safe_display_value(value: object, unavailable: str = "-") -> str:
+    if value is None:
+        return unavailable
+    if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+        return unavailable
+    text = str(value)
+    if text.strip().lower() in {"nan", "inf", "-inf", "none"}:
+        return unavailable
+    return text
+
+
+def safe_krw(value: object, unavailable: str = "-") -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return unavailable
+    if math.isnan(number) or math.isinf(number):
+        return unavailable
+    return f"{number:,.0f}원"
+
+
+def safe_percent(value: object, decimals: int = 2, unavailable: str = "-") -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return unavailable
+    if math.isnan(number) or math.isinf(number):
+        return unavailable
+    return f"{number:,.{decimals}f}%"
+
+
+def _format_table_value(column: str, value: object) -> object:
+    value = format_calculation_value(value)
+    if isinstance(value, str):
+        return value
+    if any(keyword in column for keyword in ["KRW", "금액", "손익", "수수료", "비용"]):
+        return safe_krw(value, unavailable="계산 불가")
+    if any(keyword in column for keyword in ["비중", "수익률", "등락률", "MDD", "(%)"]):
+        return safe_percent(value, unavailable="계산 불가")
+    if any(keyword in column for keyword in ["점수", "비율", "환율", "가격", "단가"]):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return value
+        if math.isnan(number) or math.isinf(number):
+            return "계산 불가"
+        return f"{number:,.2f}"
+    return value
+
+
 def format_display_dataframe(frame: pd.DataFrame) -> pd.DataFrame:
     localized = localize_columns(frame.copy())
     if not isinstance(localized, pd.DataFrame):
         return frame
-    return localized.map(format_calculation_value)
+    formatted = localized.copy()
+    for column in formatted.columns:
+        formatted[column] = formatted[column].map(
+            lambda value, col=str(column): _format_table_value(col, value)
+        )
+    return formatted
 
 
 def format_reliability_label(value: object) -> str:
@@ -193,6 +429,28 @@ def format_metric_number(
     if math.isnan(number) or math.isinf(number):
         return unavailable
     return f"{number:,.{decimals}f}{suffix}"
+
+
+def apply_plotly_dark_theme(fig: go.Figure) -> go.Figure:
+    fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#e5e7eb", "family": "Inter, Arial, sans-serif"},
+        title={"font": {"size": 16}, "x": 0.02, "xanchor": "left"},
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "right",
+            "x": 1,
+        },
+        margin={"l": 30, "r": 24, "t": 56, "b": 36},
+        hovermode="closest",
+    )
+    fig.update_xaxes(showgrid=False, zeroline=False)
+    fig.update_yaxes(gridcolor="rgba(148, 163, 184, 0.16)", zeroline=False)
+    return fig
 
 
 def mock_delete_warning_message() -> str:
@@ -295,6 +553,8 @@ def get_fx_status_message(
 
 
 def select_data_mode() -> DataMode:
+    st.sidebar.markdown("### 개인용 투자 대시보드")
+    st.sidebar.caption("리서치, 모의매매, 리스크 점검을 위한 개발용 MVP")
     selected = st.sidebar.radio(
         "데이터 모드",
         ["SAMPLE", "REAL_WITH_FALLBACK"],
@@ -316,11 +576,15 @@ def render_data_warning(provider: MarketDataProvider | None = None) -> None:
     badge, message, level = get_data_mode_status(
         provider.mode, provider.is_fallback_mode()
     )
-    st.markdown(f"`{badge}`")
+    tone = "info" if level == "info" else "warning"
+    render_status_chip(badge, tone)
     if level == "info":
-        st.info(f"{badge}: {message} 실제 주문 기능은 포함되어 있지 않습니다.")
+        render_alert(
+            f"{badge}: {message} 실제 주문 기능은 포함되어 있지 않습니다.", tone
+        )
     else:
-        st.warning(
+        render_alert(
             f"{badge}: {message} "
-            "이 앱은 실제 주문을 하지 않으며 투자 판단용으로 사용하면 안 됩니다."
+            "이 앱은 실제 주문을 하지 않으며 투자 판단용으로 사용하면 안 됩니다.",
+            tone,
         )

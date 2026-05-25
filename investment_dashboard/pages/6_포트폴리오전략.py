@@ -14,11 +14,15 @@ from src.scoring.portfolio_decision_engine import (
     PortfolioDecisionResult,
 )
 from src.ui_helpers import (
+    apply_plotly_dark_theme,
     build_market_data_provider,
     format_display_dataframe,
     format_metric_number,
     format_reliability_label,
+    inject_global_css,
     render_data_warning,
+    render_metric_card,
+    render_page_header,
 )
 
 SUMMARY_COLUMNS = [
@@ -97,39 +101,44 @@ def build_provider_for_cache(data_mode: str):
 def render_portfolio_summary(result: PortfolioDecisionResult) -> None:
     summary = result.portfolio_summary
     cols = st.columns(4)
-    cols[0].metric(
-        "총 평가금액 KRW",
-        format_metric_number(summary.get("total_market_value_krw"), 0),
-    )
-    cols[1].metric(
-        "총 매입금액 KRW",
-        format_metric_number(summary.get("total_cost_basis_krw"), 0),
-    )
-    cols[2].metric("총 손익 KRW", format_metric_number(summary.get("total_pnl_krw"), 0))
-    cols[3].metric("보유 종목 수", int(summary.get("position_count", 0)))
+    metrics = [
+        (
+            "총 평가금액 KRW",
+            format_metric_number(summary.get("total_market_value_krw"), 0),
+        ),
+        (
+            "총 매입금액 KRW",
+            format_metric_number(summary.get("total_cost_basis_krw"), 0),
+        ),
+        ("총 손익 KRW", format_metric_number(summary.get("total_pnl_krw"), 0)),
+        ("보유 종목 수", int(summary.get("position_count", 0))),
+    ]
+    for col, (label, value) in zip(cols, metrics, strict=True):
+        with col:
+            render_metric_card(label, value)
     cols = st.columns(4)
-    cols[0].metric(
-        "상위 1개 비중",
-        format_metric_number(summary.get("top1_weight"), 2, "%"),
-    )
-    cols[1].metric(
-        "상위 3개 비중",
-        format_metric_number(summary.get("top3_weight"), 2, "%"),
-    )
-    cols[2].metric(
-        "데이터 신뢰도", format_reliability_label(summary.get("reliability"))
-    )
-    cols[3].metric(
-        "수익/손실 포지션",
-        f"{summary.get('profit_position_count', 0)} / {summary.get('loss_position_count', 0)}",
-    )
+    metrics = [
+        ("상위 1개 비중", format_metric_number(summary.get("top1_weight"), 2, "%")),
+        ("상위 3개 비중", format_metric_number(summary.get("top3_weight"), 2, "%")),
+        ("데이터 신뢰도", format_reliability_label(summary.get("reliability"))),
+        (
+            "수익/손실 포지션",
+            f"{summary.get('profit_position_count', 0)} / {summary.get('loss_position_count', 0)}",
+        ),
+    ]
+    for col, (label, value) in zip(cols, metrics, strict=True):
+        with col:
+            render_metric_card(label, value)
     cols = st.columns(4)
-    cols[0].metric("KR 비중", format_metric_number(summary.get("kr_weight"), 2, "%"))
-    cols[1].metric("US 비중", format_metric_number(summary.get("us_weight"), 2, "%"))
-    cols[2].metric("ETF 비중", format_metric_number(summary.get("etf_weight"), 2, "%"))
-    cols[3].metric(
-        "개별주 비중", format_metric_number(summary.get("stock_weight"), 2, "%")
-    )
+    metrics = [
+        ("KR 비중", format_metric_number(summary.get("kr_weight"), 2, "%")),
+        ("US 비중", format_metric_number(summary.get("us_weight"), 2, "%")),
+        ("ETF 비중", format_metric_number(summary.get("etf_weight"), 2, "%")),
+        ("개별주 비중", format_metric_number(summary.get("stock_weight"), 2, "%")),
+    ]
+    for col, (label, value) in zip(cols, metrics, strict=True):
+        with col:
+            render_metric_card(label, value)
     st.caption(str(summary.get("concentration_comment", "")))
 
 
@@ -173,17 +182,25 @@ def render_charts(frame: pd.DataFrame) -> None:
     chart["ticker"] = chart["market"] + ":" + chart["symbol"]
     if _has_numeric_data(chart, "additional_buy_score"):
         st.plotly_chart(
-            px.bar(chart, x="ticker", y="additional_buy_score", title="추가매수 점수"),
+            apply_plotly_dark_theme(
+                px.bar(
+                    chart, x="ticker", y="additional_buy_score", title="추가매수 점수"
+                )
+            ),
             width="stretch",
         )
     if _has_numeric_data(chart, "sell_review_score"):
         st.plotly_chart(
-            px.bar(chart, x="ticker", y="sell_review_score", title="매도 검토 점수"),
+            apply_plotly_dark_theme(
+                px.bar(chart, x="ticker", y="sell_review_score", title="매도 검토 점수")
+            ),
             width="stretch",
         )
     if _has_numeric_data(chart, "mdd"):
         st.plotly_chart(
-            px.bar(chart, x="ticker", y="mdd", title="종목별 MDD 비교"),
+            apply_plotly_dark_theme(
+                px.bar(chart, x="ticker", y="mdd", title="종목별 MDD 비교")
+            ),
             width="stretch",
         )
     if not {"additional_buy_score", "sell_review_score", "mdd"} & set(chart.columns):
@@ -195,11 +212,13 @@ def render_charts(frame: pd.DataFrame) -> None:
     )
     if not weight_chart.empty:
         st.plotly_chart(
-            px.pie(
-                weight_chart,
-                names="ticker",
-                values="position_weight_krw",
-                title="포트폴리오 비중(원화 기준)",
+            apply_plotly_dark_theme(
+                px.pie(
+                    weight_chart,
+                    names="ticker",
+                    values="position_weight_krw",
+                    title="포트폴리오 비중(원화 기준)",
+                )
             ),
             width="stretch",
         )
@@ -216,12 +235,14 @@ def render_price_flow_chart(price_history: pd.DataFrame) -> None:
         return
     chart["ticker"] = chart["market"] + ":" + chart["symbol"]
     st.plotly_chart(
-        px.line(
-            chart,
-            x="date",
-            y="normalized_price",
-            color="ticker",
-            title="3년 가격 흐름(시작점=100)",
+        apply_plotly_dark_theme(
+            px.line(
+                chart,
+                x="date",
+                y="normalized_price",
+                color="ticker",
+                title="3년 가격 흐름(시작점=100)",
+            )
         ),
         width="stretch",
     )
@@ -264,8 +285,13 @@ def _has_numeric_data(frame: pd.DataFrame, column: str) -> bool:
 
 def main() -> None:
     st.set_page_config(page_title="포트폴리오 전략분석", layout="wide")
+    inject_global_css()
     init_db()
-    st.title("포트폴리오 전략분석")
+    render_page_header(
+        "포트폴리오 전략분석",
+        "가상 포지션의 가격 흐름, 추세, 데이터 신뢰도, 검토 신호를 요약합니다.",
+        badges=[("의사결정 보조 정보", "info"), ("실제 주문 없음", "success")],
+    )
     provider = build_market_data_provider()
     render_data_warning(provider)
     st.warning(
