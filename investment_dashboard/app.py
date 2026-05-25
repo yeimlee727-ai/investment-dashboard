@@ -13,6 +13,7 @@ from src.database import get_session, init_db
 from src.data_providers.base import DataMode, Quote
 from src.data_providers.market_data_provider import MarketDataProvider
 from src.models import WatchlistItem
+from src.risk.rebalancing_engine import RebalancingEngine
 from src.scanner.stock_scanner import StockScanner
 from src.scoring.portfolio_decision_engine import PortfolioDecisionEngine
 from src.scoring.scoring_engine import ScoringEngine
@@ -36,6 +37,10 @@ PAGE_GUIDE = [
     (
         "포트폴리오전략",
         "보유 가상 포지션의 추가매수 후보와 매도 검토 신호를 점검합니다.",
+    ),
+    (
+        "리스크리밸런싱",
+        "위험 기여도, 상관관계, 스트레스 테스트, 목표 비중을 점검합니다.",
     ),
 ]
 
@@ -448,6 +453,70 @@ def render_portfolio_decision_summary(provider: MarketDataProvider) -> None:
     )
 
 
+def render_rebalancing_summary(provider: MarketDataProvider) -> None:
+    st.subheader("리스크·리밸런싱 요약")
+    broker = MockBroker(data_provider=provider)
+    positions = broker.get_positions()
+    if not positions:
+        st.info(
+            "분석할 모의매매 포지션이 없습니다. 자세히 보기: 리스크·리밸런싱 분석 페이지"
+        )
+        return
+    try:
+        decision = PortfolioDecisionEngine().analyze(positions, provider)
+        result = RebalancingEngine().analyze(
+            positions,
+            provider,
+            additional_investment_krw=3_000_000,
+            decision_frame=decision.positions,
+        )
+    except Exception as exc:
+        st.warning(f"리스크·리밸런싱 요약을 생성하지 못했습니다: {exc}")
+        return
+    summary = result.risk_summary
+    cols = st.columns(5)
+    cols[0].metric("상위 위험 기여", str(summary.get("top_risk_symbol") or "-"))
+    cols[1].metric(
+        "평균 상관관계",
+        format_metric_number(summary.get("average_correlation"), 3),
+    )
+    cols[2].metric(
+        "최악 스트레스 손실률",
+        format_metric_number(summary.get("worst_stress_loss_pct"), 2, "%"),
+    )
+    cols[3].metric("목표 범위 이탈", int(summary.get("overweight_count") or 0))
+    cols[4].metric("신뢰도", format_reliability_label(summary.get("data_reliability")))
+    allocation = result.allocation_plan
+    if allocation.empty:
+        st.info("추가 투자금 배분안 요약 데이터가 없습니다.")
+    else:
+        candidates = allocation[
+            (pd.to_numeric(allocation["adjusted_amount"], errors="coerce") > 0)
+            & (allocation["symbol"].astype(str) != "CASH")
+        ].head(3)
+        if candidates.empty:
+            st.info("현재 기준 추가 배분 후보가 제한되어 있습니다.")
+        else:
+            st.write("추가 투자금 배분안 상위 후보")
+            st.dataframe(
+                format_display_dataframe(
+                    candidates[
+                        [
+                            "symbol",
+                            "market",
+                            "asset_class",
+                            "adjusted_amount",
+                            "allocation_reason",
+                            "limit_reason",
+                        ]
+                    ]
+                ),
+                hide_index=True,
+                width="stretch",
+            )
+    st.caption("자세히 보기: 리스크·리밸런싱 분석 페이지")
+
+
 def render_navigation_guide() -> None:
     st.subheader("페이지 이동 안내")
     st.caption("왼쪽 사이드바의 Pages 메뉴에서 각 기능 페이지로 이동할 수 있습니다.")
@@ -501,6 +570,7 @@ def main() -> None:
         render_paper_trading_summary(provider)
 
     render_portfolio_decision_summary(provider)
+    render_rebalancing_summary(provider)
     render_navigation_guide()
 
 
