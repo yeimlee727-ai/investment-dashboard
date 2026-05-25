@@ -106,7 +106,8 @@ def main() -> None:
         column_config={
             "공시 링크": st.column_config.LinkColumn("공시 링크"),
             "risk_score": st.column_config.NumberColumn(
-                "risk_score", help="매수/매도 추천이 아닌 검토 필요 위험 점수입니다."
+                "risk_score",
+                help="매수/매도 실행 지시가 아닌 검토 필요 위험 점수입니다.",
             ),
         },
     )

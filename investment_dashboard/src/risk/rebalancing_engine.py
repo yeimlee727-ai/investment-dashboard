@@ -81,6 +81,10 @@ STRESS_SCENARIOS: dict[str, dict[str, float]] = {
     },
 }
 
+MAX_SINGLE_POSITION_WEIGHT = 40.0
+MAX_INDIVIDUAL_GROWTH_WEIGHT = 10.0
+MAX_SEMICONDUCTOR_WEIGHT = 30.0
+
 
 @dataclass
 class RebalancingResult:
@@ -157,6 +161,8 @@ class RebalancingEngine:
             weight = self._finite_float(position.get("position_weight_krw"))
             if weight is None and value is not None and total_value > 0:
                 weight = value / total_value * 100
+            if value is None or value <= 0:
+                weight = None
             row = dict(position)
             row["symbol"] = symbol
             row["market"] = market
@@ -207,11 +213,16 @@ class RebalancingEngine:
                     period=period,
                 )
             except TypeError:
-                history = data_provider.get_price_history(
-                    str(position["symbol"]),
-                    str(position["market"]),
-                    756,
-                )
+                try:
+                    history = data_provider.get_price_history(
+                        str(position["symbol"]),
+                        str(position["market"]),
+                        756,
+                    )
+                except Exception as exc:
+                    history = pd.DataFrame()
+                    history.attrs["error"] = str(exc)
+                    history.attrs["data_source"] = "ERROR"
             except Exception as exc:
                 history = pd.DataFrame()
                 history.attrs["error"] = str(exc)
@@ -275,6 +286,8 @@ class RebalancingEngine:
             for position in positions
             if self._position_key(position) in returns.columns
             and self._finite_float(position.get("position_weight_krw")) is not None
+            and self._finite_float(position.get("market_value_krw")) is not None
+            and self._score_float(position.get("market_value_krw")) > 0
         ]
         weights = self._weights_for_keys(positions, valid_keys)
         contribution_map: dict[str, float | None] = {key: None for key in valid_keys}
@@ -429,6 +442,13 @@ class RebalancingEngine:
         targets: dict[str, float],
         tolerance_pct: float,
     ) -> pd.DataFrame:
+        tolerance = self._safe_tolerance(tolerance_pct)
+        target_total = sum(self._score_float(value) for value in targets.values())
+        target_total_status = (
+            "목표 비중 합계가 100%입니다."
+            if abs(target_total - 100) <= 0.01
+            else "목표 비중 합계가 100%가 아니므로 검토 기준이 왜곡될 수 있습니다."
+        )
         total_value = self._total_value(positions)
         current = {category: 0.0 for category in targets}
         for position in positions:
@@ -446,16 +466,18 @@ class RebalancingEngine:
             now = current_pct.get(category, 0.0)
             target = targets.get(category, 0.0)
             gap = now - target
-            exceeded = abs(gap) > tolerance_pct
+            exceeded = abs(gap) > tolerance
             rows.append(
                 {
                     "asset_class": category,
                     "current_weight": round(now, 2),
                     "target_weight": round(target, 2),
                     "weight_gap": round(gap, 2),
-                    "tolerance_pct": round(tolerance_pct, 2),
+                    "tolerance_pct": round(tolerance, 2),
                     "is_outside_band": exceeded,
-                    "rebalance_opinion": self._rebalance_opinion(gap, tolerance_pct),
+                    "rebalance_opinion": self._rebalance_opinion(gap, tolerance),
+                    "target_total_weight": round(target_total, 2),
+                    "target_total_status": target_total_status,
                 }
             )
         return pd.DataFrame(rows)
@@ -481,9 +503,11 @@ class RebalancingEngine:
             "allocation_reason",
             "limit_reason",
         ]
-        if additional_investment_krw <= 0 or not positions:
+        investment = max(0.0, self._score_float(additional_investment_krw))
+        if investment <= 0 or not positions:
             return pd.DataFrame(columns=columns)
-        if self._total_value(positions) <= 0:
+        total_value = self._total_value(positions)
+        if total_value <= 0:
             return pd.DataFrame(columns=columns)
         risk_context = (
             risk.set_index("symbol").to_dict("index") if not risk.empty else {}
@@ -531,16 +555,19 @@ class RebalancingEngine:
         for row in raw_rows:
             position = row["position"]
             candidate = (
-                additional_investment_krw * row["raw_weight"] / total_raw
-                if total_raw > 0
-                else 0.0
+                investment * row["raw_weight"] / total_raw if total_raw > 0 else 0.0
             )
-            adjusted = self._cap_individual_growth(position, row["current"], candidate)
-            if (
-                adjusted < candidate
-                and "개별 성장주 상한 점검" not in row["limit_reasons"]
-            ):
-                row["limit_reasons"].append("개별 성장주 상한 점검")
+            adjusted, cap_reasons = self._apply_allocation_caps(
+                position,
+                candidate,
+                total_value,
+                investment,
+            )
+            for reason in cap_reasons:
+                if reason not in row["limit_reasons"]:
+                    row["limit_reasons"].append(reason)
+            if adjusted == 0 and candidate > 0 and not row["limit_reasons"]:
+                row["limit_reasons"].append("배분 제한")
             allocated += adjusted
             rows.append(
                 {
@@ -561,7 +588,7 @@ class RebalancingEngine:
                     "limit_reason": ", ".join(row["limit_reasons"]),
                 }
             )
-        cash_left = max(0.0, additional_investment_krw - allocated)
+        cash_left = max(0.0, investment - allocated)
         if cash_left > 0:
             rows.append(
                 {
@@ -690,6 +717,8 @@ class RebalancingEngine:
             reasons.append("데이터 신뢰도 낮음")
         if risk_contribution is not None and risk_contribution - current_weight >= 12:
             reasons.append("위험 기여도 높음")
+        if risk_contribution is None:
+            reasons.append("위험 기여도 계산 불가")
         if add_score < 45:
             reasons.append("추가매수 점수 낮음")
         if sell_score >= 70:
@@ -705,14 +734,37 @@ class RebalancingEngine:
             reasons.append("환율 오류")
         return reasons
 
-    def _cap_individual_growth(
-        self, position: dict[str, Any], current_weight: float, candidate: float
-    ) -> float:
-        if str(position.get("asset_class")) != "개별 성장주":
-            return candidate
-        if current_weight >= 10:
-            return 0.0
-        return candidate
+    def _apply_allocation_caps(
+        self,
+        position: dict[str, Any],
+        candidate: float,
+        total_value: float,
+        additional_investment: float,
+    ) -> tuple[float, list[str]]:
+        if candidate <= 0:
+            return 0.0, []
+        current_value = self._finite_float(position.get("market_value_krw"))
+        if current_value is None or current_value < 0:
+            return 0.0, ["평가금액 계산 불가"]
+        post_total = total_value + additional_investment
+        if post_total <= 0:
+            return 0.0, ["포트폴리오 평가금액 계산 불가"]
+
+        caps = [(MAX_SINGLE_POSITION_WEIGHT, "단일 종목 상한 점검")]
+        asset_class = str(position.get("asset_class"))
+        if asset_class == "개별 성장주":
+            caps.append((MAX_INDIVIDUAL_GROWTH_WEIGHT, "개별 성장주 상한 점검"))
+        if asset_class == "미국 반도체/AI ETF":
+            caps.append((MAX_SEMICONDUCTOR_WEIGHT, "반도체/AI 상한 점검"))
+
+        adjusted = candidate
+        reasons = []
+        for cap_weight, reason in caps:
+            capacity = max(0.0, post_total * cap_weight / 100 - current_value)
+            if adjusted > capacity:
+                adjusted = capacity
+                reasons.append(reason)
+        return max(0.0, adjusted), reasons
 
     def _reliability(
         self, history: pd.DataFrame, returns: pd.Series
@@ -746,10 +798,10 @@ class RebalancingEngine:
 
     def _rebalance_opinion(self, gap: float, tolerance: float) -> str:
         if gap > tolerance:
-            return "목표 비중 초과로 비중 조절 검토"
+            return "목표 비중 대비 초과 구간입니다. 비중 조절 검토 대상입니다."
         if gap < -tolerance:
-            return "목표 비중 미달로 추가매수 후보 검토"
-        return "허용 범위 내 관망"
+            return "목표 비중 대비 부족 구간입니다. 추가 배분 검토 대상입니다."
+        return "허용 범위 안에 있어 유지 가능 구간입니다."
 
     def _summary_reliability(self, risk: pd.DataFrame) -> str:
         if risk.empty or "reliability" not in risk:
@@ -798,6 +850,10 @@ class RebalancingEngine:
         result = self._finite_float(value)
         return default if result is None else result
 
+    def _safe_tolerance(self, value: float) -> float:
+        tolerance = self._score_float(value)
+        return min(100.0, max(0.0, tolerance))
+
     def _round_optional(self, value: float | None) -> float | None:
         return round(value, 2) if value is not None else None
 
@@ -813,11 +869,5 @@ class RebalancingEngine:
     def _clean_frame(self, frame: pd.DataFrame) -> pd.DataFrame:
         if frame.empty:
             return frame
-        return (
-            frame.replace([np.inf, -np.inf], np.nan)
-            .astype(object)
-            .where(
-                pd.notna(frame),
-                None,
-            )
-        )
+        cleaned = frame.replace([np.inf, -np.inf], np.nan).astype(object)
+        return cleaned.where(pd.notna(cleaned), None)

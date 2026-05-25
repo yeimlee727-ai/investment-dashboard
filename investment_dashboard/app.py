@@ -260,7 +260,7 @@ def render_scanner_summary(scored: pd.DataFrame) -> None:
         title="상위 종목 점수",
     )
     st.plotly_chart(fig, width="stretch")
-    st.caption("점수는 스캐너 요약 지표이며 매수/매도 추천이 아닙니다.")
+    st.caption("점수는 스캐너 요약 지표이며 매수/매도 실행 지시가 아닙니다.")
 
 
 def render_dart_summary(disclosures: pd.DataFrame) -> None:
