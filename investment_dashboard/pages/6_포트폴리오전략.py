@@ -297,6 +297,10 @@ def main() -> None:
     st.warning(
         "실제 주문, 실제 체결, 실제 계좌 조회 없이 MockBroker 가상 포지션만 분석합니다."
     )
+    st.caption(
+        "통합 포트폴리오 비중은 원화 환산 평가금액 기준입니다. "
+        "SAMPLE/FALLBACK 데이터에서는 비중과 손익이 실제와 다를 수 있습니다."
+    )
 
     broker = MockBroker(data_provider=provider)
     positions = broker.get_positions()

@@ -246,6 +246,42 @@ def test_portfolio_summary_contains_krw_totals() -> None:
     assert result.portfolio_summary["total_pnl_krw"] == 100_000
 
 
+def test_us_position_weight_uses_krw_converted_portfolio_weight() -> None:
+    engine = PortfolioDecisionEngine()
+    provider = FakeHistoryProvider(
+        {
+            ("360750", "KR"): make_history("360750"),
+            ("390390", "KR"): make_history("390390"),
+            ("453870", "KR"): make_history("453870"),
+            ("GRAB", "US"): make_history("GRAB", market="US"),
+        }
+    )
+    positions = [
+        make_position("360750", "KR", weight=29.76),
+        make_position("390390", "KR", weight=28.4),
+        make_position("453870", "KR", weight=36.07),
+        {
+            "symbol": "GRAB",
+            "market": "US",
+            "name": "GRAB",
+            "currency": "USD",
+            "market_value_krw": 157_950,
+            "cost_basis_krw": 160_200,
+            "total_pnl_krw": -2_250,
+            "position_weight_krw": 5.77,
+            "total_pnl_pct": -1.4,
+            "fx_error": None,
+        },
+    ]
+
+    result = engine.analyze(positions, provider)
+    grab = result.positions[result.positions["symbol"] == "GRAB"].iloc[0]
+
+    assert grab["position_weight_krw"] == 5.77
+    assert result.portfolio_summary["us_weight"] == 5.77
+    assert result.portfolio_summary["us_weight"] < 10
+
+
 def test_portfolio_strategy_page_compiles() -> None:
     page = Path("pages/6_포트폴리오전략.py")
 

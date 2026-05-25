@@ -307,6 +307,10 @@ def main() -> None:
     st.caption(
         "현재가는 외부 조회 또는 샘플 데이터 기반이며 실제 체결가가 아닐 수 있습니다."
     )
+    st.caption(
+        "통합 포트폴리오 비중은 원화 환산 평가금액 기준입니다. "
+        "US 종목은 USD 현재가에 USD/KRW 환율을 적용해 원화 환산합니다."
+    )
 
     risk_engine = RiskEngine(RiskConfig())
     broker = MockBroker(risk_engine=risk_engine, data_provider=provider)
@@ -375,6 +379,7 @@ def main() -> None:
         st.warning(
             "환율 조회 실패로 일부 US 종목의 원화 환산 평가가 제한됩니다. fx_error 컬럼을 확인하세요."
         )
+    st.caption("SAMPLE/FALLBACK 데이터에서는 비중과 손익이 실제와 다를 수 있습니다.")
 
     daily_pnl = broker.get_daily_realized_pnl()
     risk_metrics = risk_engine.portfolio_risk_metrics(positions, daily_pnl)
