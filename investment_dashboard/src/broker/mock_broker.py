@@ -13,6 +13,7 @@ from src.models import RealizedPnlLog, VirtualOrder, VirtualPosition, utc_now
 from src.risk.risk_engine import RiskEngine
 
 PortfolioImportRow = dict[str, float | int | str | None]
+PortfolioImportResult = dict[str, object]
 
 
 class MockBroker(Broker):
@@ -463,7 +464,7 @@ class MockBroker(Broker):
         self,
         rows: list[PortfolioImportRow],
         mode: str = "upsert",
-    ) -> dict[str, int | str]:
+    ) -> PortfolioImportResult:
         """Import virtual positions without creating simulated order logs."""
 
         if mode not in {"upsert", "overwrite_existing", "replace"}:
@@ -473,10 +474,14 @@ class MockBroker(Broker):
                 "updated": 0,
                 "skipped": len(rows),
                 "failed": 0,
+                "current_position_count": self._count_positions(),
+                "applied_at": datetime.now().isoformat(timespec="seconds"),
+                "details": [],
                 "message": "지원하지 않는 반영 방식입니다.",
             }
 
         added = updated = skipped = failed = 0
+        details: list[dict[str, object]] = []
         with get_session() as session:
             if mode == "replace":
                 session.execute(delete(VirtualPosition))
@@ -493,6 +498,13 @@ class MockBroker(Broker):
                     or not avg_price
                 ):
                     failed += 1
+                    details.append(
+                        self._import_detail(
+                            row=row,
+                            result="오류 제외",
+                            reason="종목코드, 시장구분, 수량, 평균단가 중 유효하지 않은 값이 있습니다.",
+                        )
+                    )
                     continue
 
                 position = session.execute(
@@ -504,6 +516,15 @@ class MockBroker(Broker):
 
                 if mode == "overwrite_existing" and position is None:
                     skipped += 1
+                    details.append(
+                        self._import_detail(
+                            row=row,
+                            result="건너뜀",
+                            reason="기존 동일 market+symbol 가상 포지션이 없습니다.",
+                            new_quantity=quantity,
+                            new_avg_price=avg_price,
+                        )
+                    )
                     continue
 
                 if position is None:
@@ -518,14 +539,39 @@ class MockBroker(Broker):
                         )
                     )
                     added += 1
+                    details.append(
+                        self._import_detail(
+                            row=row,
+                            result="신규 추가",
+                            reason="MockBroker 가상 포지션 신규 등록",
+                            new_quantity=quantity,
+                            new_avg_price=avg_price,
+                        )
+                    )
                     continue
 
+                previous_quantity = position.quantity
+                previous_avg_price = position.avg_price
                 position.quantity = quantity
                 position.avg_price = avg_price
                 position.realized_pnl = 0.0
                 position.is_open = True
                 position.updated_at = utc_now()
                 updated += 1
+                details.append(
+                    self._import_detail(
+                        row=row,
+                        result="업데이트",
+                        reason="기존 MockBroker 가상 포지션을 업로드 값으로 갱신",
+                        previous_quantity=previous_quantity,
+                        new_quantity=quantity,
+                        previous_avg_price=previous_avg_price,
+                        new_avg_price=avg_price,
+                    )
+                )
+
+            session.flush()
+            current_position_count = self._count_positions(session)
 
         return {
             "mode": mode,
@@ -533,8 +579,45 @@ class MockBroker(Broker):
             "updated": updated,
             "skipped": skipped,
             "failed": failed,
+            "current_position_count": current_position_count,
+            "applied_at": datetime.now().isoformat(timespec="seconds"),
+            "details": details,
             "message": "MockBroker 가상 포지션 일괄 반영을 완료했습니다.",
         }
+
+    def _import_detail(
+        self,
+        row: PortfolioImportRow,
+        result: str,
+        reason: str,
+        previous_quantity: int | None = None,
+        new_quantity: int | None = None,
+        previous_avg_price: float | None = None,
+        new_avg_price: float | None = None,
+    ) -> dict[str, object]:
+        return {
+            "market": str(row.get("market", "")).upper().strip(),
+            "symbol": str(row.get("symbol", "")).upper().strip(),
+            "name": row.get("name") or "",
+            "result": result,
+            "previous_quantity": previous_quantity,
+            "new_quantity": new_quantity,
+            "previous_avg_price": previous_avg_price,
+            "new_avg_price": new_avg_price,
+            "reason": reason,
+        }
+
+    def _count_positions(self, session: Session | None = None) -> int:
+        if session is not None:
+            return len(
+                session.execute(
+                    select(VirtualPosition).where(VirtualPosition.is_open.is_(True))
+                )
+                .scalars()
+                .all()
+            )
+        with get_session() as new_session:
+            return self._count_positions(new_session)
 
     def _apply_buy(
         self,
