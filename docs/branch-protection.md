@@ -40,6 +40,14 @@ black --check .
 
 GitHub UI에서 required status check 이름은 보통 `CI` 또는 workflow job 이름으로 표시됩니다. 목록에 보이지 않으면 먼저 `main`에 CI가 한 번 이상 성공적으로 실행되었는지 확인하세요.
 
+PR 브랜치에서 checks가 보이지 않거나 재검증이 필요하면 GitHub CLI로 CI를 수동 실행할 수 있습니다.
+
+```bash
+gh workflow run CI --ref feature/브랜치명
+gh run list --branch feature/브랜치명 --limit 10
+gh run watch
+```
+
 ## 운영 원칙
 
 - CI가 통과하기 전에는 merge하지 않습니다.
