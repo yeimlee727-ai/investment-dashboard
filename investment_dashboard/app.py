@@ -13,6 +13,12 @@ from src.database import get_session, init_db
 from src.data_providers.base import DataMode, Quote
 from src.data_providers.market_data_provider import MarketDataProvider
 from src.models import WatchlistItem
+from src.reporting.report_exporter import (
+    build_excel_report,
+    build_html_report,
+    build_report_from_provider,
+    report_file_name,
+)
 from src.risk.rebalancing_engine import RebalancingEngine
 from src.scanner.stock_scanner import StockScanner
 from src.scoring.portfolio_decision_engine import PortfolioDecisionEngine
@@ -589,6 +595,44 @@ def render_home_kpi_strip(provider: MarketDataProvider) -> None:
             render_metric_card(label, value, tone=tone)
 
 
+def render_report_download_section(provider: MarketDataProvider) -> None:
+    st.subheader("리포트 다운로드")
+    st.caption(
+        "MockBroker 가상 포지션과 앱 내부 분석 결과를 기반으로 한 포트폴리오 점검 리포트입니다. "
+        "투자 추천이나 실제 주문 실행 기능이 아닙니다."
+    )
+    if st.button("포트폴리오 점검 리포트 생성", type="secondary"):
+        try:
+            report = build_report_from_provider(provider)
+            st.session_state["portfolio_report_excel"] = build_excel_report(report)
+            st.session_state["portfolio_report_html"] = build_html_report(report)
+            st.session_state["portfolio_report_generated_at"] = report.generated_at
+            st.success("리포트 파일을 생성했습니다. 아래 다운로드 버튼을 사용하세요.")
+        except Exception as exc:
+            st.error(f"리포트 생성 중 오류가 발생했습니다: {exc}")
+            return
+    generated_at = st.session_state.get("portfolio_report_generated_at")
+    excel_bytes = st.session_state.get("portfolio_report_excel")
+    html_text = st.session_state.get("portfolio_report_html")
+    if excel_bytes:
+        st.download_button(
+            "Excel 리포트 다운로드",
+            data=excel_bytes,
+            file_name=report_file_name("xlsx", str(generated_at)),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    if html_text:
+        st.download_button(
+            "HTML 리포트 다운로드",
+            data=str(html_text).encode("utf-8"),
+            file_name=report_file_name("html", str(generated_at)),
+            mime="text/html",
+        )
+        st.caption(
+            "HTML 리포트는 브라우저에서 열어 인쇄 기능으로 PDF 저장할 수 있습니다."
+        )
+
+
 def render_navigation_guide() -> None:
     st.subheader("페이지 이동 안내")
     st.caption("왼쪽 사이드바의 Pages 메뉴에서 각 기능 페이지로 이동할 수 있습니다.")
@@ -634,6 +678,7 @@ def main() -> None:
     render_data_mode_section(provider)
     render_safety_status()
     render_home_kpi_strip(provider)
+    render_report_download_section(provider)
 
     render_watchlist_summary(summarize_watchlist(watchlist, quotes), watchlist)
     left, right = st.columns([1.5, 1])

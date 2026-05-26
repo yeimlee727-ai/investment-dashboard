@@ -301,6 +301,11 @@ def main() -> None:
         "통합 포트폴리오 비중은 원화 환산 평가금액 기준입니다. "
         "SAMPLE/FALLBACK 데이터에서는 비중과 손익이 실제와 다를 수 있습니다."
     )
+    st.subheader("리포트 다운로드 안내")
+    st.info(
+        "전체 포트폴리오 점검 리포트는 메인 대시보드의 리포트 다운로드 섹션에서 "
+        "Excel 또는 HTML 파일로 생성할 수 있습니다."
+    )
 
     broker = MockBroker(data_provider=provider)
     positions = broker.get_positions()
