@@ -185,6 +185,9 @@ def build_report_sheets(report: PortfolioReportData) -> dict[str, pd.DataFrame]:
         ),
         "Strategy": _with_empty_message(report.strategy, "전략분석 결과가 없습니다."),
         "Scenarios": _with_empty_message(report.scenarios, "시나리오 전망 데이터 없음"),
+        "Correlation_Summary": _with_empty_message(
+            report.correlation_summary, "상관관계 요약 데이터 없음"
+        ),
         "Risk_Rebalancing": _with_empty_message(
             report.risk_rebalancing, "리스크·리밸런싱 결과가 없습니다."
         ),
