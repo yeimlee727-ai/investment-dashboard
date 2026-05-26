@@ -130,6 +130,19 @@ def test_us_price_that_looks_like_krw_is_warning() -> None:
     assert "USD" in result.warnings.iloc[0]["message"]
 
 
+def test_warning_rows_remain_importable_after_confirmation() -> None:
+    frame = pd.DataFrame(
+        [{"symbol": "GRAB", "market": "US", "quantity": 30, "avg_price": 35000}]
+    )
+
+    result = validate_portfolio_frame(frame)
+
+    assert result.warning_count == 1
+    assert result.error_count == 0
+    assert result.can_import is True
+    assert result.valid_rows[0]["symbol"] == "GRAB"
+
+
 def test_error_rows_are_not_in_valid_rows() -> None:
     frame = pd.DataFrame(
         [

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 import plotly.express as px
@@ -19,12 +19,16 @@ from src.ui_helpers import (
     apply_plotly_dark_theme,
     build_market_data_provider,
     format_display_dataframe,
+    get_upload_apply_result_message,
+    get_upload_read_success_message,
+    get_upload_validation_summary_message,
     get_fx_status_message,
     inject_global_css,
     localize_columns,
     mock_delete_warning_message,
     portfolio_upload_notice_message,
     render_data_warning,
+    render_alert,
     render_metric_card,
     render_page_header,
 )
@@ -296,14 +300,49 @@ def render_position_delete_ui(
             st.error(str(result["message"]))
 
 
+def render_last_bulk_upload_result() -> None:
+    result = st.session_state.get("bulk_upload_last_result")
+    if not isinstance(result, dict):
+        return
+    failed = int(result.get("failed", 0)) + int(result.get("excluded_error_count", 0))
+    tone = "warning" if failed else "success"
+    render_alert(get_upload_apply_result_message(result), tone)
+    meta = []
+    if st.session_state.get("bulk_upload_last_file_name"):
+        meta.append(f"파일: {st.session_state['bulk_upload_last_file_name']}")
+    if result.get("mode_label"):
+        meta.append(f"반영 방식: {result['mode_label']}")
+    if result.get("applied_at"):
+        meta.append(f"반영 시각: {result['applied_at']}")
+    if meta:
+        st.caption(" / ".join(meta))
+    if failed:
+        st.warning(
+            "일부 행은 오류로 인해 반영되지 않았습니다. 오류 상세를 확인한 뒤 파일을 수정해 다시 업로드하세요."
+        )
+    details = result.get("details")
+    if isinstance(details, list) and details:
+        st.write("직전 반영 결과 상세")
+        st.dataframe(
+            format_display_dataframe(pd.DataFrame(details)),
+            hide_index=True,
+            width="stretch",
+        )
+
+
 def render_bulk_upload_ui(
     broker: MockBroker, positions: list[dict[str, object]]
 ) -> None:
     st.subheader("보유종목 일괄 업로드")
     st.info(portfolio_upload_notice_message())
+    render_last_bulk_upload_result()
     st.caption(
         "US 종목 평균단가는 USD 기준, KR 종목 평균단가는 KRW 기준으로 입력하세요. "
         "통합 포트폴리오 비중은 원화 환산 평가금액 기준으로 계산됩니다."
+    )
+    st.caption(
+        "처음 사용하는 경우 샘플 CSV를 내려받아 형식만 수정해 업로드하세요. "
+        "current_price는 선택 컬럼이며, 업로드 값은 실제 시세로 확정하지 않습니다."
     )
     st.download_button(
         "샘플 CSV 양식 다운로드",
@@ -332,12 +371,21 @@ def render_bulk_upload_ui(
     try:
         raw = read_portfolio_upload(uploaded.name, uploaded.getvalue())
     except ValueError as exc:
-        st.error(str(exc))
+        st.error(
+            "파일을 읽을 수 없습니다. CSV 또는 XLSX 형식인지 확인해 주세요. "
+            f"상세: {exc}"
+        )
         return
 
     if raw.empty:
         st.warning("업로드 파일에 표시할 데이터가 없습니다.")
         return
+
+    st.session_state["bulk_upload_last_file_name"] = uploaded.name
+    st.session_state["bulk_upload_last_validated_at"] = datetime.now().isoformat(
+        timespec="seconds"
+    )
+    render_alert(get_upload_read_success_message(uploaded.name, len(raw)), "success")
 
     st.write("업로드 데이터 미리보기")
     st.dataframe(raw.head(30), hide_index=True, width="stretch")
@@ -348,6 +396,12 @@ def render_bulk_upload_ui(
         if position.get("market") and position.get("symbol")
     }
     validation = validate_portfolio_frame(raw, existing_keys=existing_keys)
+    validation_message, validation_tone = get_upload_validation_summary_message(
+        validation.valid_count,
+        validation.error_count,
+        validation.warning_count,
+    )
+    render_alert(validation_message, validation_tone)
     cols = st.columns(4)
     cols[0].metric("반영 가능 행", validation.valid_count)
     cols[1].metric("오류 행", validation.error_count)
@@ -385,36 +439,39 @@ def render_bulk_upload_ui(
         "기존 동일 종목만 덮어쓰기": "overwrite_existing",
         "전체 MockBroker 포지션 초기화 후 업로드 데이터로 교체": "replace",
     }
+    mode_descriptions = {
+        "기존 포지션 유지 + 업로드 종목 추가/업데이트": (
+            "기존 포지션은 유지하고, 같은 종목은 업로드 값으로 업데이트합니다."
+        ),
+        "기존 동일 종목만 덮어쓰기": (
+            "기존에 같은 market+symbol이 있는 종목만 업데이트합니다. 없는 종목은 건너뜁니다."
+        ),
+        "전체 MockBroker 포지션 초기화 후 업로드 데이터로 교체": (
+            "기존 MockBroker 가상 포지션을 모두 지우고 업로드 파일 기준으로 다시 구성합니다."
+        ),
+    }
     mode = mode_map[mode_label]
+    st.caption(mode_descriptions[mode_label])
     if mode == "replace":
-        st.warning("전체 초기화는 MockBroker 로컬 가상 포지션만 정리합니다.")
-    confirm_warning = (
-        st.checkbox("경고 내용을 확인했으며 반영을 계속합니다.")
-        if validation.warning_count
-        else True
-    )
+        st.warning(
+            "전체 교체는 로컬 MockBroker 가상 포지션만 초기화합니다. 실제 계좌와 무관합니다."
+        )
     confirm_replace = (
         st.checkbox("전체 MockBroker 포지션 초기화를 확인합니다.")
         if mode == "replace"
         else True
     )
     confirm = st.checkbox(
-        "파일 기반 MockBroker 가상 포지션 등록이며 실제 주문/계좌와 무관함을 확인합니다."
+        "업로드 내용과 경고 행을 확인했으며, MockBroker 가상 포지션에 반영합니다."
     )
-    disabled = (
-        validation.valid_count == 0
-        or not confirm
-        or not confirm_warning
-        or not confirm_replace
-    )
+    disabled = validation.valid_count == 0 or not confirm or not confirm_replace
     if st.button("가상 포지션 일괄 반영", type="primary", disabled=disabled):
         result = broker.import_positions(validation.valid_rows, mode=mode)
-        st.success(
-            f"반영 방식: {mode_label} / 신규 {result['added']}건, "
-            f"업데이트 {result['updated']}건, 건너뜀 {result['skipped']}건, "
-            f"실패 {result['failed']}건"
-        )
-        st.session_state["last_portfolio_import_result"] = result
+        result["mode_label"] = mode_label
+        result["excluded_error_count"] = validation.error_count
+        st.session_state["bulk_upload_last_result"] = result
+        st.session_state["bulk_upload_last_file_name"] = uploaded.name
+        st.session_state["bulk_upload_last_applied_at"] = result.get("applied_at")
         st.rerun()
 
 

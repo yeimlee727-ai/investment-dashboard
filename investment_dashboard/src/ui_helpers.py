@@ -115,6 +115,13 @@ KOREAN_COLUMN_LABELS = {
     "adjusted_amount": "보정 후 금액(KRW)",
     "allocation_reason": "배분 사유",
     "limit_reason": "제한 사유",
+    "result": "처리 결과",
+    "previous_quantity": "이전 수량",
+    "new_quantity": "신규 수량",
+    "previous_avg_price": "이전 평균단가",
+    "new_avg_price": "신규 평균단가",
+    "current_position_count": "현재 가상 포지션 수",
+    "applied_at": "반영 시각",
     "페이지": "페이지",
     "설명": "설명",
 }
@@ -464,6 +471,50 @@ def portfolio_upload_notice_message() -> str:
     return (
         "업로드 기능은 파일 기반 MockBroker 가상 포지션 등록 기능입니다. "
         "실제 증권사 계좌를 조회하거나 실제 주문을 실행하지 않습니다."
+    )
+
+
+def get_upload_read_success_message(file_name: str, row_count: int) -> str:
+    return (
+        f"파일을 정상적으로 읽었습니다. 총 {row_count}개 행을 인식했습니다. "
+        f"업로드 파일명: {file_name}. CSV/XLSX 파일 파싱이 완료되었습니다."
+    )
+
+
+def get_upload_validation_summary_message(
+    valid_count: int,
+    error_count: int,
+    warning_count: int,
+) -> tuple[str, str]:
+    message = (
+        f"검증 완료: 반영 가능 {valid_count}건, "
+        f"오류 {error_count}건, 경고 {warning_count}건."
+    )
+    if error_count:
+        return (
+            f"{message} 오류 행이 있어 일부 데이터는 반영되지 않습니다.",
+            "danger",
+        )
+    if warning_count:
+        return (
+            f"{message} 오류는 없지만 경고 행은 내용을 확인한 뒤 반영하세요.",
+            "warning",
+        )
+    return f"{message} 오류와 경고가 없어 반영 가능합니다.", "success"
+
+
+def get_upload_apply_result_message(result: dict[str, object]) -> str:
+    error_count = int(result.get("failed", 0)) + int(
+        result.get("excluded_error_count", 0)
+    )
+    return (
+        "가상 포지션 일괄 반영 완료: "
+        f"신규 {int(result.get('added', 0))}건, "
+        f"업데이트 {int(result.get('updated', 0))}건, "
+        f"건너뜀 {int(result.get('skipped', 0))}건, "
+        f"오류 {error_count}건. "
+        f"현재 MockBroker 가상 포지션: {int(result.get('current_position_count', 0))}개. "
+        "아래 포지션 표에서 반영 결과를 확인하세요."
     )
 
 

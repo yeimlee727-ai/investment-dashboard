@@ -17,6 +17,9 @@ from src.ui_helpers import (
     get_fx_status_message,
     get_rebalancing_band_label,
     get_stress_test_notice,
+    get_upload_apply_result_message,
+    get_upload_read_success_message,
+    get_upload_validation_summary_message,
     korean_column_name,
     localize_columns,
     mock_delete_warning_message,
@@ -89,6 +92,33 @@ def test_portfolio_upload_notice_message_is_clear() -> None:
     assert "MockBroker 가상 포지션" in message
     assert "실제 주문" in message
     assert "계좌" in message
+
+
+def test_bulk_upload_confirmation_messages_are_clear() -> None:
+    read_message = get_upload_read_success_message("sample.csv", 4)
+    validation_message, tone = get_upload_validation_summary_message(4, 0, 2)
+    apply_message = get_upload_apply_result_message(
+        {
+            "added": 1,
+            "updated": 2,
+            "skipped": 1,
+            "failed": 0,
+            "excluded_error_count": 1,
+            "current_position_count": 4,
+        }
+    )
+
+    assert "총 4개 행" in read_message
+    assert "sample.csv" in read_message
+    assert tone == "warning"
+    assert "검증 완료" in validation_message
+    assert "가상 포지션 일괄 반영 완료" in apply_message
+    assert "신규 1건" in apply_message
+    assert "오류 1건" in apply_message
+    assert "현재 MockBroker 가상 포지션: 4개" in apply_message
+    for message in [read_message, validation_message, apply_message]:
+        assert "주문 완료" not in message
+        assert "체결 완료" not in message
 
 
 def test_reliability_label_is_korean() -> None:

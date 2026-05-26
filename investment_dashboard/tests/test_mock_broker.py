@@ -369,6 +369,9 @@ def test_import_positions_upserts_without_order_logs(isolated_session) -> None:
     )
 
     assert result["added"] == 1
+    assert result["current_position_count"] == 1
+    assert result["details"][0]["result"] == "신규 추가"
+    assert result["details"][0]["new_quantity"] == 30
     position = broker.get_positions()[0]
     assert position["symbol"] == "GRAB"
     assert position["avg_price"] == 3.56
@@ -389,6 +392,9 @@ def test_import_positions_updates_existing_market_symbol(isolated_session) -> No
     )
 
     assert result["updated"] == 1
+    assert result["details"][0]["result"] == "업데이트"
+    assert result["details"][0]["previous_quantity"] == 1
+    assert result["details"][0]["new_quantity"] == 2
     position = broker.get_positions()[0]
     assert position["quantity"] == 2
     assert position["avg_price"] == 69_000
@@ -412,6 +418,7 @@ def test_import_positions_overwrite_existing_skips_new_symbols(
 
     assert result["updated"] == 1
     assert result["skipped"] == 1
+    assert {detail["result"] for detail in result["details"]} == {"업데이트", "건너뜀"}
     positions = broker.get_positions(current_prices={"KR:005930": 71_000})
     assert {position["symbol"] for position in positions} == {"005930"}
 
@@ -428,8 +435,25 @@ def test_import_positions_replace_clears_existing_positions(isolated_session) ->
     )
 
     assert result["added"] == 1
+    assert result["current_position_count"] == 1
     positions = broker.get_positions()
     assert {position["symbol"] for position in positions} == {"390390"}
+
+
+def test_import_positions_reports_invalid_rows_without_order_logs(
+    isolated_session,
+) -> None:
+    broker = make_broker()
+
+    result = broker.import_positions(
+        [{"symbol": "", "market": "KR", "quantity": 0, "avg_price": -1}]
+    )
+
+    assert result["failed"] == 1
+    assert result["current_position_count"] == 0
+    assert result["details"][0]["result"] == "오류 제외"
+    with isolated_session() as session:
+        assert session.execute(select(VirtualOrder)).scalars().all() == []
 
 
 def test_order_and_realized_pnl_reports_include_required_columns(
