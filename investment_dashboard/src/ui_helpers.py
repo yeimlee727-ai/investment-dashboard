@@ -460,6 +460,13 @@ def mock_delete_warning_message() -> str:
     )
 
 
+def portfolio_upload_notice_message() -> str:
+    return (
+        "업로드 기능은 파일 기반 MockBroker 가상 포지션 등록 기능입니다. "
+        "실제 증권사 계좌를 조회하거나 실제 주문을 실행하지 않습니다."
+    )
+
+
 def get_rebalancing_band_label(is_outside_band: object) -> str:
     return "리밸런싱 검토" if bool(is_outside_band) else "유지 가능 구간"
 

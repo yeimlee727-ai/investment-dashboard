@@ -8,6 +8,11 @@ import streamlit as st
 
 from src.broker.base import OrderRequest
 from src.broker.mock_broker import MockBroker
+from src.broker.portfolio_importer import (
+    SAMPLE_PORTFOLIO_CSV,
+    read_portfolio_upload,
+    validate_portfolio_frame,
+)
 from src.database import init_db
 from src.risk.risk_engine import RiskConfig, RiskEngine
 from src.ui_helpers import (
@@ -18,6 +23,7 @@ from src.ui_helpers import (
     inject_global_css,
     localize_columns,
     mock_delete_warning_message,
+    portfolio_upload_notice_message,
     render_data_warning,
     render_metric_card,
     render_page_header,
@@ -290,6 +296,128 @@ def render_position_delete_ui(
             st.error(str(result["message"]))
 
 
+def render_bulk_upload_ui(
+    broker: MockBroker, positions: list[dict[str, object]]
+) -> None:
+    st.subheader("보유종목 일괄 업로드")
+    st.info(portfolio_upload_notice_message())
+    st.caption(
+        "US 종목 평균단가는 USD 기준, KR 종목 평균단가는 KRW 기준으로 입력하세요. "
+        "통합 포트폴리오 비중은 원화 환산 평가금액 기준으로 계산됩니다."
+    )
+    st.download_button(
+        "샘플 CSV 양식 다운로드",
+        data=SAMPLE_PORTFOLIO_CSV.encode("utf-8-sig"),
+        file_name="mockbroker_portfolio_sample.csv",
+        mime="text/csv",
+    )
+    with st.expander("샘플 컬럼 안내", expanded=False):
+        st.write(
+            "필수 컬럼: `symbol 또는 종목코드`, `market 또는 시장`, "
+            "`quantity 또는 수량`, `avg_price 또는 평균단가`"
+        )
+        st.write(
+            "선택 컬럼: `name`, `currency`, `memo`, `sector`, "
+            "`current_price`, `account`, `source`"
+        )
+
+    uploaded = st.file_uploader(
+        "CSV 또는 Excel(.xlsx) 파일 업로드",
+        type=["csv", "xlsx", "xls"],
+        help=".xls는 환경에 따라 제한될 수 있으므로 .xlsx 또는 .csv 사용을 권장합니다.",
+    )
+    if uploaded is None:
+        return
+
+    try:
+        raw = read_portfolio_upload(uploaded.name, uploaded.getvalue())
+    except ValueError as exc:
+        st.error(str(exc))
+        return
+
+    if raw.empty:
+        st.warning("업로드 파일에 표시할 데이터가 없습니다.")
+        return
+
+    st.write("업로드 데이터 미리보기")
+    st.dataframe(raw.head(30), hide_index=True, width="stretch")
+
+    existing_keys = {
+        (str(position.get("market", "")), str(position.get("symbol", "")).upper())
+        for position in positions
+        if position.get("market") and position.get("symbol")
+    }
+    validation = validate_portfolio_frame(raw, existing_keys=existing_keys)
+    cols = st.columns(4)
+    cols[0].metric("반영 가능 행", validation.valid_count)
+    cols[1].metric("오류 행", validation.error_count)
+    cols[2].metric("경고 행", validation.warning_count)
+    cols[3].metric("기존 포지션", len(existing_keys))
+
+    if not validation.preview.empty:
+        st.write("정규화된 반영 가능 데이터")
+        st.dataframe(
+            format_display_dataframe(validation.preview),
+            hide_index=True,
+            width="stretch",
+        )
+    if not validation.errors.empty:
+        st.error("오류가 있는 행은 반영하지 않습니다.")
+        st.dataframe(
+            localize_columns(validation.errors), hide_index=True, width="stretch"
+        )
+    if not validation.warnings.empty:
+        st.warning("경고 행은 내용을 확인한 뒤 반영할 수 있습니다.")
+        st.dataframe(
+            localize_columns(validation.warnings), hide_index=True, width="stretch"
+        )
+
+    mode_label = st.selectbox(
+        "반영 방식",
+        [
+            "기존 포지션 유지 + 업로드 종목 추가/업데이트",
+            "기존 동일 종목만 덮어쓰기",
+            "전체 MockBroker 포지션 초기화 후 업로드 데이터로 교체",
+        ],
+    )
+    mode_map = {
+        "기존 포지션 유지 + 업로드 종목 추가/업데이트": "upsert",
+        "기존 동일 종목만 덮어쓰기": "overwrite_existing",
+        "전체 MockBroker 포지션 초기화 후 업로드 데이터로 교체": "replace",
+    }
+    mode = mode_map[mode_label]
+    if mode == "replace":
+        st.warning("전체 초기화는 MockBroker 로컬 가상 포지션만 정리합니다.")
+    confirm_warning = (
+        st.checkbox("경고 내용을 확인했으며 반영을 계속합니다.")
+        if validation.warning_count
+        else True
+    )
+    confirm_replace = (
+        st.checkbox("전체 MockBroker 포지션 초기화를 확인합니다.")
+        if mode == "replace"
+        else True
+    )
+    confirm = st.checkbox(
+        "파일 기반 MockBroker 가상 포지션 등록이며 실제 주문/계좌와 무관함을 확인합니다."
+    )
+    disabled = (
+        validation.valid_count == 0
+        or not confirm
+        or not confirm_warning
+        or not confirm_replace
+    )
+    if st.button("가상 포지션 일괄 반영", type="primary", disabled=disabled):
+        result = broker.import_positions(validation.valid_rows, mode=mode)
+        st.success(
+            f"반영 방식: {mode_label} / 신규 {result['added']}건, "
+            f"업데이트 {result['updated']}건, 건너뜀 {result['skipped']}건, "
+            f"실패 {result['failed']}건"
+        )
+        st.session_state["last_portfolio_import_result"] = result
+        st.rerun()
+
+
 def main() -> None:
     st.set_page_config(page_title="모의매매", layout="wide")
     inject_global_css()
@@ -330,6 +458,9 @@ def main() -> None:
     else:
         fx = provider.get_fx_rate("USD/KRW")
         render_fx_status(fx.rate, fx.data_source, fx.as_of, fx.error)
+
+    import_positions_snapshot = broker.get_positions(manual_fx_rate=manual_fx_rate)
+    render_bulk_upload_ui(broker, import_positions_snapshot)
 
     with st.form("virtual_order"):
         col1, col2, col3, col4, col5 = st.columns(5)

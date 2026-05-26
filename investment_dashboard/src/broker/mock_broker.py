@@ -12,6 +12,8 @@ from src.data_providers.market_data_provider import MarketDataProvider
 from src.models import RealizedPnlLog, VirtualOrder, VirtualPosition, utc_now
 from src.risk.risk_engine import RiskEngine
 
+PortfolioImportRow = dict[str, float | int | str | None]
+
 
 class MockBroker(Broker):
     """Virtual broker that records simulated fills only."""
@@ -457,6 +459,83 @@ class MockBroker(Broker):
                 "deleted_realized_pnl": deleted_realized,
             }
 
+    def import_positions(
+        self,
+        rows: list[PortfolioImportRow],
+        mode: str = "upsert",
+    ) -> dict[str, int | str]:
+        """Import virtual positions without creating simulated order logs."""
+
+        if mode not in {"upsert", "overwrite_existing", "replace"}:
+            return {
+                "mode": mode,
+                "added": 0,
+                "updated": 0,
+                "skipped": len(rows),
+                "failed": 0,
+                "message": "지원하지 않는 반영 방식입니다.",
+            }
+
+        added = updated = skipped = failed = 0
+        with get_session() as session:
+            if mode == "replace":
+                session.execute(delete(VirtualPosition))
+
+            for row in rows:
+                symbol = str(row.get("symbol", "")).upper().strip()
+                market = str(row.get("market", "")).upper().strip()
+                quantity = self._positive_int(row.get("quantity"))
+                avg_price = self._positive_float(row.get("avg_price"))
+                if (
+                    not symbol
+                    or market not in {"KR", "US"}
+                    or not quantity
+                    or not avg_price
+                ):
+                    failed += 1
+                    continue
+
+                position = session.execute(
+                    select(VirtualPosition).where(
+                        VirtualPosition.symbol == symbol,
+                        VirtualPosition.market == market,
+                    )
+                ).scalar_one_or_none()
+
+                if mode == "overwrite_existing" and position is None:
+                    skipped += 1
+                    continue
+
+                if position is None:
+                    session.add(
+                        VirtualPosition(
+                            symbol=symbol,
+                            market=market,
+                            quantity=quantity,
+                            avg_price=avg_price,
+                            realized_pnl=0.0,
+                            is_open=True,
+                        )
+                    )
+                    added += 1
+                    continue
+
+                position.quantity = quantity
+                position.avg_price = avg_price
+                position.realized_pnl = 0.0
+                position.is_open = True
+                position.updated_at = utc_now()
+                updated += 1
+
+        return {
+            "mode": mode,
+            "added": added,
+            "updated": updated,
+            "skipped": skipped,
+            "failed": failed,
+            "message": "MockBroker 가상 포지션 일괄 반영을 완료했습니다.",
+        }
+
     def _apply_buy(
         self,
         session: Session,
@@ -577,6 +656,20 @@ class MockBroker(Broker):
         if value is None or fx_rate is None:
             return None
         return value * fx_rate
+
+    def _positive_int(self, value: object) -> int | None:
+        try:
+            number = int(float(str(value).replace(",", "").strip()))
+        except (TypeError, ValueError):
+            return None
+        return number if number > 0 else None
+
+    def _positive_float(self, value: object) -> float | None:
+        try:
+            number = float(str(value).replace(",", "").strip())
+        except (TypeError, ValueError):
+            return None
+        return number if number > 0 else None
 
     def _round_optional(self, value: float | None) -> float | None:
         return round(value, 2) if value is not None else None

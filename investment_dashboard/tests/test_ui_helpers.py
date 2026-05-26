@@ -20,6 +20,7 @@ from src.ui_helpers import (
     korean_column_name,
     localize_columns,
     mock_delete_warning_message,
+    portfolio_upload_notice_message,
     safe_display_value,
     safe_krw,
     safe_percent,
@@ -80,6 +81,14 @@ def test_mock_delete_warning_message_is_clear() -> None:
 
     assert "MockBroker" in message
     assert "실제 주문" in message
+
+
+def test_portfolio_upload_notice_message_is_clear() -> None:
+    message = portfolio_upload_notice_message()
+
+    assert "MockBroker 가상 포지션" in message
+    assert "실제 주문" in message
+    assert "계좌" in message
 
 
 def test_reliability_label_is_korean() -> None:
