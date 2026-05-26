@@ -47,6 +47,15 @@ class SampleStrategyResult:
         self.portfolio_summary = {}
 
 
+class SampleRebalancingResult:
+    def __init__(self, correlation_summary: dict[str, object]) -> None:
+        self.risk_contribution = pd.DataFrame()
+        self.target_comparison = pd.DataFrame()
+        self.correlation_summary = correlation_summary
+        self.stress_results = pd.DataFrame()
+        self.allocation_plan = pd.DataFrame()
+
+
 def read_worksheet_xml(payload: bytes, sheet_name: str) -> str:
     workbook_ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
     rel_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -73,6 +82,8 @@ def test_empty_report_data_is_safe() -> None:
     assert sheets["Positions"].iloc[0]["안내"] == "가상 포지션 데이터가 없습니다."
     assert "Scenarios" in sheets
     assert sheets["Scenarios"].iloc[0]["안내"] == "시나리오 전망 데이터 없음"
+    assert "Correlation_Summary" in sheets
+    assert sheets["Correlation_Summary"].iloc[0]["안내"] == "상관관계 요약 데이터 없음"
 
 
 def test_summary_and_positions_report_data() -> None:
@@ -128,6 +139,7 @@ def test_excel_report_contains_required_sheet_names() -> None:
             "Positions",
             "Strategy",
             "Scenarios",
+            "Correlation_Summary",
             "Risk_Rebalancing",
             "Stress_Test",
             "Allocation",
@@ -193,6 +205,72 @@ def test_scenarios_sheet_sanitizes_nan_inf_none_values() -> None:
     lower_xml = scenarios_xml.lower()
 
     assert "계산 불가" in scenarios_xml
+    assert ">nan<" not in lower_xml
+    assert ">inf<" not in lower_xml
+    assert ">-inf<" not in lower_xml
+    assert ">none<" not in lower_xml
+
+
+def test_correlation_summary_sheet_contains_summary_data() -> None:
+    report = build_portfolio_report_data(
+        sample_positions(),
+        rebalancing_result=SampleRebalancingResult(
+            {
+                "average_correlation": 0.42,
+                "highest_pair": "AAPL/MSFT",
+                "highest_correlation": 0.91,
+                "lowest_pair": "AAPL/BND",
+                "lowest_correlation": -0.12,
+                "diversification_comment": "분산 효과 점검",
+            }
+        ),
+        data_mode="SAMPLE",
+        provider_name="TEST",
+    )
+
+    sheets = build_report_sheets(report)
+    payload = build_excel_report(report)
+    correlation_xml = read_worksheet_xml(payload, "Correlation_Summary")
+
+    assert "Correlation_Summary" in sheets
+    assert "AAPL/MSFT" in correlation_xml
+    assert "분산 효과 점검" in correlation_xml
+
+
+def test_empty_correlation_summary_sheet_contains_notice_message() -> None:
+    report = build_portfolio_report_data(
+        sample_positions(), data_mode="SAMPLE", provider_name="TEST"
+    )
+
+    payload = build_excel_report(report)
+    correlation_xml = read_worksheet_xml(payload, "Correlation_Summary")
+
+    assert "상관관계 요약 데이터 없음" in correlation_xml
+
+
+def test_correlation_summary_sheet_sanitizes_nan_inf_none_values() -> None:
+    report = build_portfolio_report_data(
+        sample_positions(),
+        rebalancing_result=SampleRebalancingResult(
+            {
+                "average_correlation": float("nan"),
+                "highest_pair": None,
+                "highest_correlation": float("inf"),
+                "lowest_pair": "nan",
+                "lowest_correlation": "-inf",
+                "diversification_comment": None,
+            }
+        ),
+        data_mode="SAMPLE",
+        provider_name="TEST",
+    )
+
+    correlation_xml = read_worksheet_xml(
+        build_excel_report(report), "Correlation_Summary"
+    )
+    lower_xml = correlation_xml.lower()
+
+    assert "계산 불가" in correlation_xml
     assert ">nan<" not in lower_xml
     assert ">inf<" not in lower_xml
     assert ">-inf<" not in lower_xml
