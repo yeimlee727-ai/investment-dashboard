@@ -1,6 +1,9 @@
 import json
 import math
+from pathlib import Path
+import py_compile
 import re
+from io import StringIO
 
 import pandas as pd
 
@@ -11,7 +14,11 @@ from src.analysis.decision_support_demo import (
     run_csv_input_decision_support_pipeline,
 )
 from src.analysis.decision_support_inputs import (
+    build_sample_candidate_csv_text,
+    build_sample_portfolio_csv_text,
     build_csv_input_decision_support_context,
+    get_candidate_csv_schema_rows,
+    get_portfolio_csv_schema_rows,
     normalize_candidate_universe_input,
     normalize_portfolio_holdings_input,
     validate_candidate_universe_input,
@@ -53,6 +60,43 @@ def test_valid_portfolio_csv_like_frame_normalizes_correctly() -> None:
     assert validation.is_valid is True
     assert "Duplicate symbols detected; keeping first record." in validation.warnings
     assert "Negative weight_pct values were clamped to 0." in validation.warnings
+
+
+def test_sample_portfolio_csv_template_contains_required_columns() -> None:
+    text = build_sample_portfolio_csv_text()
+    frame = pd.read_csv(StringIO(text))
+
+    assert {"symbol", "weight_pct"}.issubset(frame.columns)
+    assert not frame.empty
+
+
+def test_sample_candidate_csv_template_contains_required_columns() -> None:
+    text = build_sample_candidate_csv_text()
+    frame = pd.read_csv(StringIO(text))
+
+    assert "symbol" in frame.columns
+    assert not frame.empty
+
+
+def test_schema_helpers_include_required_and_optional_fields() -> None:
+    portfolio_rows = get_portfolio_csv_schema_rows()
+    candidate_rows = get_candidate_csv_schema_rows()
+
+    assert {"symbol", "weight_pct"}.issubset({row["column"] for row in portfolio_rows})
+    assert "symbol" in {row["column"] for row in candidate_rows}
+    assert any(row["required"] == "yes" for row in portfolio_rows)
+    assert any(row["required"] == "no" for row in candidate_rows)
+
+
+def test_csv_templates_parse_and_normalize_through_pipeline_helpers() -> None:
+    portfolio = pd.read_csv(StringIO(build_sample_portfolio_csv_text()))
+    candidate = pd.read_csv(StringIO(build_sample_candidate_csv_text()))
+
+    portfolio_normalized = normalize_portfolio_holdings_input(portfolio)
+    candidate_normalized = normalize_candidate_universe_input(candidate)
+
+    assert portfolio_normalized["symbol"].tolist() == ["AAPL", "JNJ"]
+    assert candidate_normalized["symbol"].tolist() == ["MSFT", "TSLA"]
 
 
 def test_valid_candidate_csv_like_frame_normalizes_correctly() -> None:
@@ -213,6 +257,26 @@ def test_csv_input_pipeline_does_not_expose_external_or_broker_dependencies() ->
     assert not hasattr(decision_support_demo, "mcp")
     assert not hasattr(decision_support_demo, "MockBroker")
     assert not hasattr(decision_support_demo, "TossBrokerPlaceholder")
+
+
+def test_page_compiles_without_streamlit_runtime_execution() -> None:
+    page_path = Path("pages/8_Decision_Support.py")
+
+    py_compile.compile(str(page_path), doraise=True)
+
+
+def test_csv_ui_helper_text_avoids_forbidden_recommendation_wording() -> None:
+    text = "\n".join(
+        [
+            build_sample_portfolio_csv_text(),
+            build_sample_candidate_csv_text(),
+            str(get_portfolio_csv_schema_rows()),
+            str(get_candidate_csv_schema_rows()),
+        ]
+    ).lower()
+
+    for pattern in FORBIDDEN_PATTERNS:
+        assert not re.search(pattern, text)
 
 
 def test_csv_input_outputs_avoid_forbidden_recommendation_wording() -> None:
