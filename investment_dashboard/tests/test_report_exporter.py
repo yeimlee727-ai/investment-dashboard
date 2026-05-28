@@ -144,8 +144,129 @@ def test_excel_report_contains_required_sheet_names() -> None:
             "Stress_Test",
             "Allocation",
             "Limitations",
+            "Decision_Support",
         ]:
             assert sheet_name in workbook_xml
+
+
+def test_decision_support_sheet_is_created_without_package() -> None:
+    report = build_portfolio_report_data(
+        sample_positions(), data_mode="SAMPLE", provider_name="TEST"
+    )
+
+    payload = build_excel_report(report)
+    decision_xml = read_worksheet_xml(payload, "Decision_Support")
+
+    assert "Decision_Support" in build_report_sheets(report)
+    assert "Decision support package data not available" in decision_xml
+
+
+def test_decision_support_sheet_contains_package_summary_and_safety_flags() -> None:
+    report = build_portfolio_report_data(
+        sample_positions(),
+        data_mode="SAMPLE",
+        provider_name="TEST",
+        decision_support_package={
+            "package_version": "0.1",
+            "data_status": "ok",
+            "candidate_score_summary": {
+                "total_count": 2,
+                "top_symbols": ["MSFT", "AAPL"],
+                "caution_symbols": ["TSLA"],
+                "summary_note": "Candidate review summary.",
+            },
+            "portfolio_fit_summary": {
+                "total_count": 2,
+                "top_fit_symbols": ["MSFT"],
+                "concentration_caution_symbols": ["TSLA"],
+                "summary_note": "Portfolio fit summary.",
+            },
+            "action_plan_summary": {
+                "total_count": 1,
+                "ready_for_manual_review_count": 1,
+                "top_review_symbols": ["MSFT"],
+                "caution_symbols": [],
+                "summary_note": "Action plan summary.",
+            },
+            "safety_flags": {
+                "decision_support_only": True,
+                "no_real_trading": True,
+                "no_brokerage_api": True,
+                "no_account_lookup": True,
+                "no_order_execution": True,
+            },
+            "limitations": ["Decision-support only."],
+            "markdown": "# Long markdown not dumped",
+        },
+    )
+
+    decision_xml = read_worksheet_xml(build_excel_report(report), "Decision_Support")
+
+    assert "Safety_Flags" in decision_xml
+    assert "decision_support_only" in decision_xml
+    assert "no_real_trading" in decision_xml
+    assert "Candidate_Review" in decision_xml
+    assert "MSFT" in decision_xml
+    assert "TSLA" in decision_xml
+    assert "markdown_available" in decision_xml
+    assert "Long markdown not dumped" not in decision_xml
+
+
+def test_decision_support_sheet_sanitizes_nested_nan_inf_none_values() -> None:
+    report = build_portfolio_report_data(
+        sample_positions(),
+        data_mode="SAMPLE",
+        provider_name="TEST",
+        decision_support_package={
+            "package_version": "0.1",
+            "data_status": float("nan"),
+            "candidate_score_summary": {
+                "total_count": float("inf"),
+                "top_symbols": [None, "nan", "MSFT"],
+                "caution_symbols": ["-inf"],
+                "summary_note": None,
+            },
+            "portfolio_fit_summary": {
+                "total_count": 1,
+                "top_fit_symbols": ["AAPL"],
+                "concentration_caution_symbols": [float("-inf")],
+            },
+            "action_plan_summary": {"total_count": 1},
+            "safety_flags": {
+                "decision_support_only": True,
+                "no_real_trading": True,
+            },
+            "limitations": [None, float("inf"), "manual validation required"],
+        },
+    )
+
+    decision_xml = read_worksheet_xml(build_excel_report(report), "Decision_Support")
+    lower_xml = decision_xml.lower()
+
+    assert "계산 불가" in decision_xml
+    assert "MSFT" in decision_xml
+    assert ">nan<" not in lower_xml
+    assert ">inf<" not in lower_xml
+    assert ">-inf<" not in lower_xml
+    assert ">none<" not in lower_xml
+
+
+def test_html_report_is_not_changed_by_decision_support_package() -> None:
+    report = build_portfolio_report_data(
+        sample_positions(),
+        data_mode="SAMPLE",
+        provider_name="TEST",
+        decision_support_package={
+            "package_version": "0.1",
+            "data_status": "ok",
+            "markdown": "Decision support package markdown",
+        },
+    )
+
+    html = build_html_report(report)
+
+    assert "Decision support package markdown" not in html
+    assert "Decision_Support" not in html
 
 
 def test_scenarios_sheet_contains_scenario_data() -> None:
