@@ -13,6 +13,9 @@ from src.analysis.candidate_scoring import (
     build_candidate_score_summary,
     score_candidate_records,
 )
+from src.analysis.decision_support_inputs import (
+    build_csv_input_decision_support_context,
+)
 from src.analysis.decision_support_package import (
     DecisionSupportPackage,
     build_llm_ready_payload,
@@ -53,6 +56,10 @@ class EndToEndDecisionSupportDemoResult:
     markdown: str
     llm_ready_payload: dict[str, Any]
     safety_flags: dict[str, bool]
+    input_mode: str = "demo"
+    validation_status: str = "ok"
+    validation_warnings: tuple[str, ...] = ()
+    validation_errors: tuple[str, ...] = ()
 
 
 def build_mock_portfolio_holdings() -> list[dict[str, Any]]:
@@ -389,7 +396,7 @@ def run_end_to_end_decision_support_demo() -> EndToEndDecisionSupportDemoResult:
     )
     payload = build_llm_ready_payload(package)
     payload["markdown"] = package.markdown
-    payload["safety_flags"] = dict(package.safety_flags)
+    payload["safety_flags"] = _extended_safety_flags(package.safety_flags)
 
     return EndToEndDecisionSupportDemoResult(
         portfolio_holdings=portfolio_holdings,
@@ -410,7 +417,117 @@ def run_end_to_end_decision_support_demo() -> EndToEndDecisionSupportDemoResult:
         decision_support_package=package,
         markdown=package.markdown,
         llm_ready_payload=payload,
-        safety_flags=dict(package.safety_flags),
+        safety_flags=_extended_safety_flags(package.safety_flags),
+    )
+
+
+def run_csv_input_decision_support_pipeline(
+    portfolio_holdings: pd.DataFrame | list[dict[str, Any]] | None,
+    candidate_universe: pd.DataFrame | list[dict[str, Any]] | None = None,
+) -> EndToEndDecisionSupportDemoResult:
+    context = build_csv_input_decision_support_context(
+        portfolio_holdings, candidate_universe
+    )
+    holdings_frame = context["portfolio_holdings"]
+    candidates_frame = context["candidate_universe"]
+    portfolio_records = holdings_frame.to_dict("records")
+    candidate_records = candidates_frame.to_dict("records")
+    market_regime_context = {
+        "regime_label": "manual CSV review context",
+        "risk_level": "not_assessed",
+        "macro_notes": "CSV input mode uses local user-provided data only.",
+        "data_status": "manual_csv",
+    }
+
+    enriched_portfolio = _csv_enriched_portfolio_frame(holdings_frame)
+    portfolio_risk_insights = build_position_risk_insights(enriched_portfolio)
+    risk_insight_summary = build_portfolio_risk_insight_summary(enriched_portfolio)
+
+    investment_map_points = build_investment_map_points(candidate_records)
+    investment_map_summary = build_investment_map_summary(investment_map_points)
+    mapped_candidates = _candidate_records_with_map(
+        candidate_records, investment_map_points
+    )
+    candidate_scores = score_candidate_records(mapped_candidates)
+    candidate_score_summary = build_candidate_score_summary(candidate_scores)
+    scored_candidates = _candidate_records_with_scores(
+        mapped_candidates, candidate_scores
+    )
+    portfolio_fit_results = analyze_candidate_portfolio_fit(
+        portfolio_records, scored_candidates
+    )
+    portfolio_fit_summary = build_portfolio_fit_summary(portfolio_fit_results)
+    portfolio_context = _portfolio_context(portfolio_records)
+    portfolio_context["input_mode"] = "uploaded_csv"
+    portfolio_context["validation_status"] = context["validation_status"]
+    portfolio_context["validation_warnings"] = context["validation_warnings"]
+    portfolio_context["validation_errors"] = context["validation_errors"]
+
+    insight_report = build_mock_insight_report(
+        portfolio_context=portfolio_context,
+        risk_insight_summary=asdict(risk_insight_summary),
+        candidate_score_summary=asdict(candidate_score_summary),
+        portfolio_fit_summary=asdict(portfolio_fit_summary),
+        market_regime_context=market_regime_context,
+    )
+    fit_by_symbol = {result.symbol: result for result in portfolio_fit_results}
+    action_plans = [
+        build_candidate_action_plan(
+            candidate_score=asdict(score),
+            portfolio_fit_result=asdict(fit_by_symbol.get(score.symbol)),
+            risk_insights=[
+                asdict(insight)
+                for insight in portfolio_risk_insights
+                if insight.symbol == score.symbol
+            ],
+            market_regime_context=market_regime_context,
+        )
+        for score in candidate_scores
+        if fit_by_symbol.get(score.symbol) is not None
+    ]
+    action_plan_summary = build_action_plan_summary(action_plans)
+    package = build_decision_support_package(
+        portfolio_context=portfolio_context,
+        risk_insight_summary=asdict(risk_insight_summary),
+        investment_map_summary=asdict(investment_map_summary),
+        candidate_score_summary=asdict(candidate_score_summary),
+        portfolio_fit_summary=asdict(portfolio_fit_summary),
+        insight_report=insight_report,
+        action_plan_summary=action_plan_summary,
+        action_plans=action_plans,
+        market_regime_context=market_regime_context,
+    )
+    payload = _csv_llm_ready_payload(
+        package=package,
+        validation_status=context["validation_status"],
+        validation_warnings=context["validation_warnings"],
+        validation_errors=context["validation_errors"],
+    )
+
+    return EndToEndDecisionSupportDemoResult(
+        portfolio_holdings=portfolio_records,
+        candidate_universe=candidate_records,
+        enriched_portfolio_risk=enriched_portfolio.to_dict("records"),
+        portfolio_risk_insights=[
+            asdict(insight) for insight in portfolio_risk_insights
+        ],
+        investment_map_points=[asdict(point) for point in investment_map_points],
+        investment_map_summary=asdict(investment_map_summary),
+        candidate_scores=[asdict(score) for score in candidate_scores],
+        candidate_score_summary=asdict(candidate_score_summary),
+        portfolio_fit_results=[asdict(result) for result in portfolio_fit_results],
+        portfolio_fit_summary=asdict(portfolio_fit_summary),
+        insight_report=asdict(insight_report),
+        action_plans=[asdict(plan) for plan in action_plans],
+        action_plan_summary=asdict(action_plan_summary),
+        decision_support_package=package,
+        markdown=package.markdown,
+        llm_ready_payload=payload,
+        safety_flags=_extended_safety_flags(package.safety_flags),
+        input_mode="uploaded_csv",
+        validation_status=context["validation_status"],
+        validation_warnings=tuple(context["validation_warnings"]),
+        validation_errors=tuple(context["validation_errors"]),
     )
 
 
@@ -420,6 +537,24 @@ def render_end_to_end_demo_markdown() -> str:
 
 def build_end_to_end_demo_payload() -> dict[str, Any]:
     return run_end_to_end_decision_support_demo().llm_ready_payload
+
+
+def render_csv_input_decision_support_markdown(
+    portfolio_holdings: pd.DataFrame | list[dict[str, Any]] | None,
+    candidate_universe: pd.DataFrame | list[dict[str, Any]] | None = None,
+) -> str:
+    return run_csv_input_decision_support_pipeline(
+        portfolio_holdings, candidate_universe
+    ).markdown
+
+
+def build_csv_input_decision_support_payload(
+    portfolio_holdings: pd.DataFrame | list[dict[str, Any]] | None,
+    candidate_universe: pd.DataFrame | list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    return run_csv_input_decision_support_pipeline(
+        portfolio_holdings, candidate_universe
+    ).llm_ready_payload
 
 
 def _price_history(start: str, close_values: list[float]) -> pd.DataFrame:
@@ -488,3 +623,55 @@ def _exposure(frame: pd.DataFrame, column: str) -> dict[str, float]:
         return {}
     grouped = frame.groupby(column, dropna=False)["weight_pct"].sum()
     return {str(key): round(float(value), 4) for key, value in grouped.items()}
+
+
+def _csv_enriched_portfolio_frame(holdings: pd.DataFrame) -> pd.DataFrame:
+    frame = holdings.copy()
+    for column in [
+        "total_return_pct",
+        "annualized_volatility_pct",
+        "max_drawdown_pct",
+        "observation_count",
+    ]:
+        if column not in frame:
+            frame[column] = None
+    if "risk_data_status" not in frame:
+        frame["risk_data_status"] = "missing_price_history"
+    return frame
+
+
+def _csv_llm_ready_payload(
+    package: DecisionSupportPackage,
+    validation_status: str,
+    validation_warnings: list[str],
+    validation_errors: list[str],
+) -> dict[str, Any]:
+    payload = build_llm_ready_payload(package)
+    payload.update(
+        {
+            "input_mode": "uploaded_csv",
+            "validation_status": validation_status,
+            "validation_warnings": validation_warnings,
+            "validation_errors": validation_errors,
+            "portfolio_context": package.portfolio_context,
+            "risk_summary": package.risk_insight_summary,
+            "candidate_summary": package.candidate_score_summary,
+            "portfolio_fit_summary": package.portfolio_fit_summary,
+            "action_plan_summary": package.action_plan_summary,
+            "markdown": package.markdown,
+            "safety_flags": _extended_safety_flags(package.safety_flags),
+            "limitations": package.limitations,
+        }
+    )
+    return payload
+
+
+def _extended_safety_flags(safety_flags: dict[str, bool]) -> dict[str, bool]:
+    flags = dict(safety_flags)
+    flags.update(
+        {
+            "no_llm_api_call": True,
+            "no_mcp_integration": True,
+        }
+    )
+    return flags
