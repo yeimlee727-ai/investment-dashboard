@@ -16,6 +16,11 @@ from src.analysis.decision_support_inputs import (
     get_portfolio_csv_schema_rows,
 )
 from src.analysis.decision_support_package import build_decision_support_package_summary
+from src.reporting.report_exporter import (
+    build_decision_support_excel_bytes,
+    build_decision_support_html_bytes,
+    build_decision_support_report_filename,
+)
 from src.ui_helpers import inject_global_css, localize_columns, render_page_header
 
 
@@ -100,6 +105,8 @@ def _render_result(result, mode: str) -> None:
         file_name="decision_support_preview.md",
         mime="text/markdown",
     )
+
+    _render_local_report_downloads(result)
 
     with st.expander("LLM-ready payload preview", expanded=mode == "Uploaded CSV data"):
         payload_text = json.dumps(
@@ -214,6 +221,36 @@ def _render_records_table(records: list[dict], empty_message: str) -> None:
     st.dataframe(
         localize_columns(pd.DataFrame(records)), hide_index=True, width="stretch"
     )
+
+
+def _render_local_report_downloads(result) -> None:
+    st.subheader("Local Report Downloads")
+    st.caption(
+        "Download local Excel or HTML files generated from the current decision-support package."
+    )
+    excel_bytes = build_decision_support_excel_bytes(
+        result.decision_support_package,
+        positions=result.portfolio_holdings,
+    )
+    html_bytes = build_decision_support_html_bytes(
+        result.decision_support_package,
+        positions=result.portfolio_holdings,
+    )
+    download_cols = st.columns(2)
+    with download_cols[0]:
+        st.download_button(
+            "Download Excel report",
+            data=excel_bytes,
+            file_name=build_decision_support_report_filename("xlsx"),
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    with download_cols[1]:
+        st.download_button(
+            "Download HTML report",
+            data=html_bytes,
+            file_name=build_decision_support_report_filename("html"),
+            mime="text/html",
+        )
 
 
 main()
