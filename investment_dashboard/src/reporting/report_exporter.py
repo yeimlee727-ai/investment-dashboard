@@ -239,13 +239,20 @@ def build_html_report(report: PortfolioReportData) -> str:
             ("상관관계 요약", report.correlation_summary),
             ("스트레스 테스트", report.stress_test),
             ("추가 투자금 배분안", report.allocation),
-            ("제한사항", report.limitations),
         ]
     )
-    body = "\n".join(
+    frame_body = "\n".join(
         f"<section><h2>{_escape_html(title)}</h2>{_frame_to_html(frame)}</section>"
         for title, frame in sections
     )
+    decision_support_body = _decision_support_package_to_html(
+        getattr(report, "decision_support_package", None)
+    )
+    limitations_body = (
+        f"<section><h2>{_escape_html('제한사항')}</h2>"
+        f"{_frame_to_html(report.limitations)}</section>"
+    )
+    body = "\n".join([frame_body, decision_support_body, limitations_body])
     return f"""<!doctype html>
 <html lang="ko">
 <head>
@@ -680,6 +687,28 @@ def _frame_to_html(frame: pd.DataFrame) -> str:
     if frame.empty:
         return "<p>표시할 데이터가 없습니다.</p>"
     return sanitize_report_dataframe(frame).to_html(index=False, escape=True)
+
+
+def _decision_support_package_to_html(package: Any | None) -> str:
+    title = "Decision Support"
+    if package is None:
+        return (
+            f"<section><h2>{_escape_html(title)}</h2>"
+            "<p>Decision support package data is not available.</p></section>"
+        )
+    data = _package_to_dict(package)
+    if not data:
+        return (
+            f"<section><h2>{_escape_html(title)}</h2>"
+            "<p>Decision support package data is not available.</p></section>"
+        )
+    table_html = _frame_to_html(_decision_support_package_frame(package))
+    markdown = data.get("markdown")
+    preview = ""
+    if markdown:
+        preview_text = str(markdown)[:500]
+        preview = "<h3>Markdown preview</h3>" f"<pre>{_escape_html(preview_text)}</pre>"
+    return f"<section><h2>{_escape_html(title)}</h2>" f"{table_html}{preview}</section>"
 
 
 def _escape_xml(value: str) -> str:

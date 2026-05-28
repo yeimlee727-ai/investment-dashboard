@@ -251,7 +251,18 @@ def test_decision_support_sheet_sanitizes_nested_nan_inf_none_values() -> None:
     assert ">none<" not in lower_xml
 
 
-def test_html_report_is_not_changed_by_decision_support_package() -> None:
+def test_html_report_includes_decision_support_unavailable_message() -> None:
+    report = build_portfolio_report_data(
+        sample_positions(), data_mode="SAMPLE", provider_name="TEST"
+    )
+
+    html = build_html_report(report)
+
+    assert "<h2>Decision Support</h2>" in html
+    assert "Decision support package data is not available." in html
+
+
+def test_html_report_includes_decision_support_package_fields() -> None:
     report = build_portfolio_report_data(
         sample_positions(),
         data_mode="SAMPLE",
@@ -259,14 +270,65 @@ def test_html_report_is_not_changed_by_decision_support_package() -> None:
         decision_support_package={
             "package_version": "0.1",
             "data_status": "ok",
-            "markdown": "Decision support package markdown",
+            "candidate_score_summary": {
+                "total_count": 2,
+                "top_symbols": ["MSFT"],
+                "summary_note": "Candidate summary note.",
+            },
+            "portfolio_fit_summary": {
+                "total_count": 1,
+                "top_fit_symbols": ["AAPL"],
+                "summary_note": "Fit summary note.",
+            },
+            "action_plan_summary": {
+                "total_count": 1,
+                "ready_for_manual_review_count": 1,
+                "summary_note": "Plan summary note.",
+            },
+            "safety_flags": {
+                "decision_support_only": True,
+                "no_real_trading": True,
+                "no_brokerage_api": True,
+                "no_account_lookup": True,
+                "no_order_execution": True,
+            },
+            "limitations": ["Decision-support only."],
+            "markdown": "# Decision support package markdown preview",
         },
     )
 
     html = build_html_report(report)
 
-    assert "Decision support package markdown" not in html
-    assert "Decision_Support" not in html
+    assert "<h2>Decision Support</h2>" in html
+    assert "package_version" in html
+    assert "Safety_Flags" in html
+    assert "decision_support_only" in html
+    assert "no_real_trading" in html
+    assert "Candidate summary note." in html
+    assert "Markdown preview" in html
+
+
+def test_html_report_escapes_decision_support_unsafe_text() -> None:
+    report = build_portfolio_report_data(
+        sample_positions(),
+        data_mode="SAMPLE",
+        provider_name="TEST",
+        decision_support_package={
+            "package_version": "<script>alert('x')</script>",
+            "data_status": "ok",
+            "candidate_score_summary": {
+                "summary_note": "<b>unsafe</b>",
+            },
+            "safety_flags": {"decision_support_only": True},
+            "markdown": "<script>unsafe()</script>",
+        },
+    )
+
+    html = build_html_report(report)
+
+    assert "<script>" not in html
+    assert "&lt;script&gt;" in html
+    assert "&lt;b&gt;unsafe&lt;/b&gt;" in html
 
 
 def test_scenarios_sheet_contains_scenario_data() -> None:
