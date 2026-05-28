@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import io
 import math
 import re
 from typing import Any
@@ -36,6 +37,72 @@ CANDIDATE_OPTIONAL_COLUMNS = (
     "max_drawdown_pct",
     "observation_count",
     "risk_data_status",
+)
+PORTFOLIO_SAMPLE_ROWS = (
+    {
+        "symbol": "AAPL",
+        "weight_pct": 24.0,
+        "name": "Apple",
+        "sector": "Technology",
+        "country": "US",
+        "currency": "USD",
+        "theme": "Quality growth",
+        "annualized_volatility_pct": 22.0,
+        "max_drawdown_pct": -11.0,
+        "total_return_pct": 12.0,
+        "risk_data_status": "ok",
+    },
+    {
+        "symbol": "JNJ",
+        "weight_pct": 16.0,
+        "name": "Johnson & Johnson",
+        "sector": "Healthcare",
+        "country": "US",
+        "currency": "USD",
+        "theme": "Defensive quality",
+        "annualized_volatility_pct": 18.0,
+        "max_drawdown_pct": -8.0,
+        "total_return_pct": 4.0,
+        "risk_data_status": "ok",
+    },
+)
+CANDIDATE_SAMPLE_ROWS = (
+    {
+        "symbol": "MSFT",
+        "name": "Microsoft",
+        "sector": "Software",
+        "country": "US",
+        "currency": "USD",
+        "theme": "Quality growth",
+        "financial_metric_name": "revenue_growth",
+        "financial_metric_growth_pct": 30.0,
+        "market_reaction_pct": -3.0,
+        "market_cap": 3000000000000,
+        "volume": 25000000,
+        "total_return_pct": 10.0,
+        "annualized_volatility_pct": 20.0,
+        "max_drawdown_pct": -10.0,
+        "observation_count": 45,
+        "risk_data_status": "ok",
+    },
+    {
+        "symbol": "TSLA",
+        "name": "Tesla",
+        "sector": "Technology",
+        "country": "US",
+        "currency": "USD",
+        "theme": "High beta growth",
+        "financial_metric_name": "operating_income_growth",
+        "financial_metric_growth_pct": -8.0,
+        "market_reaction_pct": 40.0,
+        "market_cap": 800000000000,
+        "volume": 75000000,
+        "total_return_pct": 22.0,
+        "annualized_volatility_pct": 58.0,
+        "max_drawdown_pct": -36.0,
+        "observation_count": 45,
+        "risk_data_status": "ok",
+    },
 )
 
 TEXT_COLUMNS = {
@@ -199,6 +266,39 @@ def build_csv_input_decision_support_context(
     }
 
 
+def get_portfolio_csv_schema_rows() -> list[dict[str, str]]:
+    return _schema_rows(
+        required_columns=PORTFOLIO_REQUIRED_COLUMNS,
+        optional_columns=PORTFOLIO_OPTIONAL_COLUMNS,
+        descriptions={
+            "symbol": "Ticker or local symbol used to identify the position.",
+            "weight_pct": "Current portfolio weight as a percentage.",
+            "risk_data_status": "Use ok when supplied risk metrics are locally reviewed.",
+        },
+    )
+
+
+def get_candidate_csv_schema_rows() -> list[dict[str, str]]:
+    return _schema_rows(
+        required_columns=CANDIDATE_REQUIRED_COLUMNS,
+        optional_columns=CANDIDATE_OPTIONAL_COLUMNS,
+        descriptions={
+            "symbol": "Ticker or local symbol used to identify the candidate.",
+            "financial_metric_growth_pct": "User-supplied financial metric growth percentage.",
+            "market_reaction_pct": "User-supplied price or market-cap reaction percentage.",
+            "risk_data_status": "Use ok when supplied risk metrics are locally reviewed.",
+        },
+    )
+
+
+def build_sample_portfolio_csv_text() -> str:
+    return _records_to_csv_text(PORTFOLIO_SAMPLE_ROWS)
+
+
+def build_sample_candidate_csv_text() -> str:
+    return _records_to_csv_text(CANDIDATE_SAMPLE_ROWS)
+
+
 def _normalized_frame(
     value: pd.DataFrame | list[dict[str, Any]] | None,
 ) -> pd.DataFrame:
@@ -216,6 +316,29 @@ def _normalized_frame(
         columns={column: COLUMN_ALIASES.get(column, column) for column in frame.columns}
     )
     return frame
+
+
+def _schema_rows(
+    required_columns: tuple[str, ...],
+    optional_columns: tuple[str, ...],
+    descriptions: dict[str, str],
+) -> list[dict[str, str]]:
+    rows = []
+    for column in [*required_columns, *optional_columns]:
+        rows.append(
+            {
+                "column": column,
+                "required": "yes" if column in required_columns else "no",
+                "description": descriptions.get(column, "Optional local input field."),
+            }
+        )
+    return rows
+
+
+def _records_to_csv_text(records: tuple[dict[str, Any], ...]) -> str:
+    buffer = io.StringIO()
+    pd.DataFrame(list(records)).to_csv(buffer, index=False)
+    return buffer.getvalue()
 
 
 def _normalize_column_name(value: Any) -> str:
