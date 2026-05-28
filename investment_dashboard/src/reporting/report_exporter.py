@@ -276,6 +276,56 @@ def build_html_report(report: PortfolioReportData) -> str:
 </html>"""
 
 
+def build_decision_support_report_data(
+    decision_support_package: Any | None,
+    positions: list[dict[str, Any]] | None = None,
+    data_mode: str = "DECISION_SUPPORT",
+    provider_name: str = "LOCAL_INPUT",
+) -> PortfolioReportData:
+    positions = positions or []
+    return build_portfolio_report_data(
+        positions=positions,
+        portfolio_summary=_decision_support_portfolio_summary(positions),
+        data_mode=data_mode,
+        provider_name=provider_name,
+        risk_profile="의사결정 보조",
+        additional_investment_krw=0,
+        decision_support_package=decision_support_package,
+    )
+
+
+def build_decision_support_excel_bytes(
+    decision_support_package: Any | None,
+    positions: list[dict[str, Any]] | None = None,
+) -> bytes:
+    return build_excel_report(
+        build_decision_support_report_data(
+            decision_support_package=decision_support_package,
+            positions=positions,
+        )
+    )
+
+
+def build_decision_support_html_bytes(
+    decision_support_package: Any | None,
+    positions: list[dict[str, Any]] | None = None,
+) -> bytes:
+    html = build_html_report(
+        build_decision_support_report_data(
+            decision_support_package=decision_support_package,
+            positions=positions,
+        )
+    )
+    return html.encode("utf-8")
+
+
+def build_decision_support_report_filename(extension: str) -> str:
+    safe_extension = extension.lower().lstrip(".")
+    if safe_extension not in {"xlsx", "html"}:
+        safe_extension = "txt"
+    return f"decision_support_report.{safe_extension}"
+
+
 def report_file_name(extension: str, generated_at: str | None = None) -> str:
     timestamp = generated_at or datetime.now().isoformat(timespec="minutes")
     safe = timestamp.replace("-", "").replace(":", "").replace("T", "_")
@@ -357,6 +407,14 @@ def _summary_from_positions(positions: list[dict[str, Any]]) -> dict[str, Any]:
         "quote_error_count": sum(1 for row in positions if row.get("quote_error")),
         "fx_error_count": sum(1 for row in positions if row.get("fx_error")),
     }
+
+
+def _decision_support_portfolio_summary(
+    positions: list[dict[str, Any]],
+) -> dict[str, Any]:
+    summary = _summary_from_positions(positions)
+    summary["position_count"] = len(positions)
+    return summary
 
 
 def _risk_rebalancing_frame(result: RebalancingResult | None) -> pd.DataFrame:

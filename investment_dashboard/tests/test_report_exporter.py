@@ -6,8 +6,13 @@ import xml.etree.ElementTree as ET
 
 import pandas as pd
 
+from src.analysis.decision_support_demo import build_mock_decision_support_package
 from src.reporting.report_exporter import (
     FORBIDDEN_REPORT_WORDS,
+    build_decision_support_excel_bytes,
+    build_decision_support_html_bytes,
+    build_decision_support_report_data,
+    build_decision_support_report_filename,
     build_excel_report,
     build_html_report,
     build_portfolio_report_data,
@@ -15,6 +20,21 @@ from src.reporting.report_exporter import (
     report_file_name,
     sanitize_report_dataframe,
 )
+
+FORBIDDEN_DOWNLOAD_PATTERNS = [
+    "buy",
+    "sell",
+    "hold",
+    "strong buy",
+    "target price",
+    "guaranteed return",
+    "must profit",
+    "take profit",
+    "stop loss",
+    "entry price",
+    "allocation percentage",
+    "exact position size",
+]
 
 
 def sample_positions() -> list[dict[str, object]]:
@@ -477,3 +497,87 @@ def test_report_file_name_uses_timestamp_and_extension() -> None:
     name = report_file_name("xlsx", "2026-05-26T12:34:00")
 
     assert name == "portfolio_report_20260526_123400.xlsx"
+
+
+def test_decision_support_package_can_build_report_data() -> None:
+    package = build_mock_decision_support_package()
+    report = build_decision_support_report_data(
+        package,
+        positions=[{"symbol": "MSFT", "name": "Microsoft", "weight_pct": 12.0}],
+    )
+
+    assert report.decision_support_package == package
+    assert not report.positions.empty
+    assert report.data_mode == "DECISION_SUPPORT"
+
+
+def test_decision_support_excel_bytes_include_required_sheets() -> None:
+    payload = build_decision_support_excel_bytes(
+        build_mock_decision_support_package(),
+        positions=[{"symbol": "MSFT", "name": "Microsoft", "weight_pct": 12.0}],
+    )
+
+    assert payload.startswith(b"PK")
+    with zipfile.ZipFile(BytesIO(payload)) as workbook:
+        workbook_xml = workbook.read("xl/workbook.xml").decode("utf-8")
+        for sheet_name in [
+            "Report_Info",
+            "Summary",
+            "Positions",
+            "Strategy",
+            "Scenarios",
+            "Correlation_Summary",
+            "Risk_Rebalancing",
+            "Stress_Test",
+            "Allocation",
+            "Limitations",
+            "Decision_Support",
+        ]:
+            assert sheet_name in workbook_xml
+
+
+def test_decision_support_html_bytes_include_decision_support_section() -> None:
+    html_bytes = build_decision_support_html_bytes(
+        build_mock_decision_support_package(),
+        positions=[{"symbol": "MSFT", "name": "Microsoft", "weight_pct": 12.0}],
+    )
+    html = html_bytes.decode("utf-8")
+
+    assert html_bytes.startswith(b"<!doctype html>")
+    assert "<h2>Decision Support</h2>" in html
+    assert "decision_support_only" in html
+
+
+def test_decision_support_download_helpers_handle_missing_package() -> None:
+    html = build_decision_support_html_bytes(None).decode("utf-8")
+    excel = build_decision_support_excel_bytes(None)
+    decision_xml = read_worksheet_xml(excel, "Decision_Support")
+
+    assert "Decision support package data is not available." in html
+    assert "Decision support package data not available" in decision_xml
+
+
+def test_decision_support_report_filenames_are_deterministic_and_safe() -> None:
+    assert build_decision_support_report_filename("xlsx") == (
+        "decision_support_report.xlsx"
+    )
+    assert build_decision_support_report_filename(".html") == (
+        "decision_support_report.html"
+    )
+    assert build_decision_support_report_filename("../bad") == (
+        "decision_support_report.txt"
+    )
+
+
+def test_decision_support_download_text_avoids_forbidden_wording() -> None:
+    package = build_mock_decision_support_package()
+    text = "\n".join(
+        [
+            build_decision_support_html_bytes(package).decode("utf-8"),
+            build_decision_support_report_filename("xlsx"),
+            build_decision_support_report_filename("html"),
+        ]
+    ).lower()
+
+    for pattern in FORBIDDEN_DOWNLOAD_PATTERNS:
+        assert pattern not in text
