@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import datetime
 from io import BytesIO
+import json
 import math
 from typing import Any
 import zipfile
@@ -58,6 +59,7 @@ class PortfolioReportData:
     stress_test: pd.DataFrame
     allocation: pd.DataFrame
     limitations: pd.DataFrame
+    decision_support_package: Any | None = None
 
 
 def build_portfolio_report_data(
@@ -69,6 +71,7 @@ def build_portfolio_report_data(
     provider_name: str = "UNKNOWN",
     risk_profile: str = "균형 성장",
     additional_investment_krw: float = 3_000_000,
+    decision_support_package: Any | None = None,
 ) -> PortfolioReportData:
     generated_at = datetime.now().isoformat(timespec="seconds")
     portfolio_summary = portfolio_summary or _summary_from_positions(positions)
@@ -141,6 +144,7 @@ def build_portfolio_report_data(
         stress_test=sanitize_report_dataframe(stress_test),
         allocation=sanitize_report_dataframe(allocation),
         limitations=sanitize_report_dataframe(limitations),
+        decision_support_package=decision_support_package,
     )
 
 
@@ -198,6 +202,9 @@ def build_report_sheets(report: PortfolioReportData) -> dict[str, pd.DataFrame]:
             report.allocation, "추가 투자금 배분안이 없습니다."
         ),
         "Limitations": report.limitations,
+        "Decision_Support": _decision_support_package_frame(
+            getattr(report, "decision_support_package", None)
+        ),
     }
 
 
@@ -284,12 +291,36 @@ def sanitize_report_dataframe(frame: pd.DataFrame) -> pd.DataFrame:
 def format_report_value(value: Any) -> Any:
     if value is None:
         return "계산 불가"
+    if is_dataclass(value):
+        return format_report_value(asdict(value))
+    if isinstance(value, (dict, list, tuple, set)):
+        return _format_nested_report_value(value)
     if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
         return "계산 불가"
     text = str(value)
     if text.strip().lower() in {"nan", "inf", "-inf", "none", "<na>"}:
         return "계산 불가"
     return value
+
+
+def _format_nested_report_value(value: Any) -> str:
+    def sanitize_nested(item: Any) -> Any:
+        if item is None:
+            return "계산 불가"
+        if is_dataclass(item):
+            return sanitize_nested(asdict(item))
+        if isinstance(item, dict):
+            return {str(key): sanitize_nested(nested) for key, nested in item.items()}
+        if isinstance(item, (list, tuple, set)):
+            return [sanitize_nested(nested) for nested in item]
+        if isinstance(item, float) and (math.isnan(item) or math.isinf(item)):
+            return "계산 불가"
+        text = str(item)
+        if text.strip().lower() in {"nan", "inf", "-inf", "none", "<na>"}:
+            return "계산 불가"
+        return item
+
+    return json.dumps(sanitize_nested(value), ensure_ascii=False, sort_keys=True)
 
 
 def _with_empty_message(frame: pd.DataFrame, message: str) -> pd.DataFrame:
@@ -347,6 +378,147 @@ def _correlation_summary_frame(result: RebalancingResult | None) -> pd.DataFrame
         ("분산 효과 코멘트", summary.get("diversification_comment")),
     ]
     return pd.DataFrame(rows, columns=["항목", "값"])
+
+
+def _decision_support_package_frame(package: Any | None) -> pd.DataFrame:
+    if package is None:
+        return pd.DataFrame(
+            [
+                (
+                    "Decision_Support",
+                    "Status",
+                    "Decision support package data not available",
+                )
+            ],
+            columns=["Section", "Field", "Value"],
+        )
+    data = _package_to_dict(package)
+    if not data:
+        return pd.DataFrame(
+            [
+                (
+                    "Decision_Support",
+                    "Status",
+                    "Decision support package data not available",
+                )
+            ],
+            columns=["Section", "Field", "Value"],
+        )
+
+    rows: list[tuple[str, str, Any]] = [
+        ("Package", "package_version", data.get("package_version")),
+        ("Package", "data_status", data.get("data_status")),
+        ("Package", "markdown_available", bool(data.get("markdown"))),
+    ]
+    for flag, value in sorted(_as_dict(data.get("safety_flags")).items()):
+        rows.append(("Safety_Flags", flag, value))
+
+    included_sections, missing_sections = _decision_support_section_status(data)
+    rows.append(("Included_Sections", "sections", included_sections))
+    rows.append(("Missing_Sections", "sections", missing_sections))
+
+    candidate_summary = _as_dict(data.get("candidate_score_summary"))
+    rows.extend(
+        [
+            ("Candidate_Review", "total_count", candidate_summary.get("total_count")),
+            ("Candidate_Review", "top_symbols", candidate_summary.get("top_symbols")),
+            (
+                "Candidate_Review",
+                "caution_symbols",
+                candidate_summary.get("caution_symbols"),
+            ),
+            ("Candidate_Review", "summary_note", candidate_summary.get("summary_note")),
+        ]
+    )
+    fit_summary = _as_dict(data.get("portfolio_fit_summary"))
+    rows.extend(
+        [
+            ("Portfolio_Fit", "total_count", fit_summary.get("total_count")),
+            ("Portfolio_Fit", "top_fit_symbols", fit_summary.get("top_fit_symbols")),
+            (
+                "Portfolio_Fit",
+                "concentration_caution_symbols",
+                fit_summary.get("concentration_caution_symbols"),
+            ),
+            ("Portfolio_Fit", "summary_note", fit_summary.get("summary_note")),
+        ]
+    )
+    action_summary = _as_dict(data.get("action_plan_summary"))
+    rows.extend(
+        [
+            ("Action_Plans", "total_count", action_summary.get("total_count")),
+            (
+                "Action_Plans",
+                "ready_for_manual_review_count",
+                action_summary.get("ready_for_manual_review_count"),
+            ),
+            (
+                "Action_Plans",
+                "top_review_symbols",
+                action_summary.get("top_review_symbols"),
+            ),
+            ("Action_Plans", "caution_symbols", action_summary.get("caution_symbols")),
+            ("Action_Plans", "summary_note", action_summary.get("summary_note")),
+        ]
+    )
+    for index, limitation in enumerate(_as_list(data.get("limitations")), start=1):
+        rows.append(("Limitations", f"limitation_{index}", limitation))
+
+    return sanitize_report_dataframe(
+        pd.DataFrame(rows, columns=["Section", "Field", "Value"])
+    )
+
+
+def _package_to_dict(package: Any) -> dict[str, Any]:
+    if is_dataclass(package):
+        package = asdict(package)
+    if isinstance(package, dict):
+        return package
+    return {}
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    if is_dataclass(value):
+        value = asdict(value)
+    return value if isinstance(value, dict) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    try:
+        return list(value)
+    except TypeError:
+        return [value]
+
+
+def _decision_support_section_status(
+    data: dict[str, Any],
+) -> tuple[list[str], list[str]]:
+    section_names = [
+        "portfolio_context",
+        "risk_insight_summary",
+        "investment_map_summary",
+        "candidate_score_summary",
+        "portfolio_fit_summary",
+        "insight_report",
+        "action_plan_summary",
+        "action_plans",
+        "market_regime_context",
+    ]
+    included = [name for name in section_names if _has_package_value(data.get(name))]
+    missing = [name for name in section_names if not _has_package_value(data.get(name))]
+    return included, missing
+
+
+def _has_package_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (dict, list, tuple, set)):
+        return bool(value)
+    return True
 
 
 def _fx_status_text(summary: dict[str, Any]) -> str:
