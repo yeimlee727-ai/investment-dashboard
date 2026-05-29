@@ -18,7 +18,9 @@ from src.analysis.decision_support_inputs import (
     build_sample_portfolio_csv_text,
     build_csv_input_decision_support_context,
     get_candidate_csv_schema_rows,
+    get_decision_support_sample_csv_manifest,
     get_portfolio_csv_schema_rows,
+    load_decision_support_sample_csv_text,
     normalize_candidate_universe_input,
     normalize_portfolio_holdings_input,
     validate_candidate_universe_input,
@@ -97,6 +99,97 @@ def test_csv_templates_parse_and_normalize_through_pipeline_helpers() -> None:
 
     assert portfolio_normalized["symbol"].tolist() == ["AAPL", "JNJ"]
     assert candidate_normalized["symbol"].tolist() == ["MSFT", "TSLA"]
+
+
+def test_sample_csv_manifest_is_deterministic_and_loads_content() -> None:
+    first = get_decision_support_sample_csv_manifest()
+    second = get_decision_support_sample_csv_manifest()
+
+    assert first == second
+    assert [item["name"] for item in first] == [
+        "portfolio_good",
+        "candidates_good",
+        "portfolio_missing_optional_data",
+        "candidates_missing_optional_data",
+        "portfolio_invalid_schema",
+        "candidates_invalid_schema",
+    ]
+    for item in first:
+        text = load_decision_support_sample_csv_text(item["name"])
+        assert item["filename"] in item["path"]
+        assert text.strip()
+
+
+def test_good_sample_csv_files_parse_successfully() -> None:
+    portfolio = pd.read_csv(
+        StringIO(load_decision_support_sample_csv_text("portfolio_good"))
+    )
+    candidates = pd.read_csv(
+        StringIO(load_decision_support_sample_csv_text("candidates_good"))
+    )
+
+    portfolio_validation = validate_portfolio_holdings_input(portfolio)
+    candidate_validation = validate_candidate_universe_input(candidates)
+    result = run_csv_input_decision_support_pipeline(portfolio, candidates)
+
+    assert portfolio_validation.is_valid is True
+    assert candidate_validation.is_valid is True
+    assert result.decision_support_package.data_status in {"ok", "partial"}
+    assert result.candidate_scores
+
+
+def test_missing_optional_sample_csv_files_are_safe() -> None:
+    portfolio = pd.read_csv(
+        StringIO(
+            load_decision_support_sample_csv_text("portfolio_missing_optional_data")
+        )
+    )
+    candidates = pd.read_csv(
+        StringIO(
+            load_decision_support_sample_csv_text("candidates_missing_optional_data")
+        )
+    )
+
+    portfolio_validation = validate_portfolio_holdings_input(portfolio)
+    candidate_validation = validate_candidate_universe_input(candidates)
+    normalized_portfolio = normalize_portfolio_holdings_input(portfolio)
+    normalized_candidates = normalize_candidate_universe_input(candidates)
+
+    assert portfolio_validation.is_valid is True
+    assert candidate_validation.is_valid is True
+    assert "Duplicate symbols detected; keeping first record." in (
+        portfolio_validation.warnings
+    )
+    assert "Negative weight_pct values were clamped to 0." in (
+        portfolio_validation.warnings
+    )
+    assert (
+        normalized_portfolio.loc[
+            normalized_portfolio["symbol"] == "MOCK_NEGATIVE", "weight_pct"
+        ].iloc[0]
+        == 0.0
+    )
+    assert "REVIEW_SIMPLE_C" in normalized_candidates["symbol"].tolist()
+
+
+def test_invalid_schema_sample_csv_files_fail_validation() -> None:
+    portfolio = pd.read_csv(
+        StringIO(load_decision_support_sample_csv_text("portfolio_invalid_schema"))
+    )
+    candidates = pd.read_csv(
+        StringIO(load_decision_support_sample_csv_text("candidates_invalid_schema"))
+    )
+
+    portfolio_validation = validate_portfolio_holdings_input(portfolio)
+    candidate_validation = validate_candidate_universe_input(candidates)
+
+    assert portfolio_validation.is_valid is False
+    assert "Required portfolio column missing: symbol." in portfolio_validation.errors
+    assert (
+        "Required portfolio column missing: weight_pct." in portfolio_validation.errors
+    )
+    assert candidate_validation.is_valid is False
+    assert "Required candidate column missing: symbol." in candidate_validation.errors
 
 
 def test_valid_candidate_csv_like_frame_normalizes_correctly() -> None:
@@ -272,6 +365,11 @@ def test_csv_ui_helper_text_avoids_forbidden_recommendation_wording() -> None:
             build_sample_candidate_csv_text(),
             str(get_portfolio_csv_schema_rows()),
             str(get_candidate_csv_schema_rows()),
+            str(get_decision_support_sample_csv_manifest()),
+            "\n".join(
+                load_decision_support_sample_csv_text(item["name"])
+                for item in get_decision_support_sample_csv_manifest()
+            ),
         ]
     ).lower()
 

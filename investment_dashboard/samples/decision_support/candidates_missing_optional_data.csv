@@ -1,0 +1,4 @@
+symbol,name,sector,financial_metric_growth_pct,market_reaction_pct
+REVIEW_SIMPLE_A,Simple Review Candidate A,Software,15.0,3.0
+REVIEW_SIMPLE_B,Simple Review Candidate B,Healthcare,,
+review_simple_c,Simple Review Candidate C,Industrial,-4.0,18.0

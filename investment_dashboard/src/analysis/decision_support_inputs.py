@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import io
 import math
+from pathlib import Path
 import re
 from typing import Any
 
@@ -133,6 +134,51 @@ COLUMN_ALIASES = {
     "weight_percent": "weight_pct",
     "portfolio_weight": "weight_pct",
 }
+SAMPLE_CSV_DIR = Path(__file__).resolve().parents[2] / "samples" / "decision_support"
+SAMPLE_CSV_FILES = (
+    {
+        "name": "portfolio_good",
+        "kind": "portfolio",
+        "scenario": "good",
+        "filename": "portfolio_good.csv",
+        "description": "Good portfolio sample for normal workflow testing.",
+    },
+    {
+        "name": "candidates_good",
+        "kind": "candidate",
+        "scenario": "good",
+        "filename": "candidates_good.csv",
+        "description": "Good candidate sample for normal workflow testing.",
+    },
+    {
+        "name": "portfolio_missing_optional_data",
+        "kind": "portfolio",
+        "scenario": "missing_optional_data",
+        "filename": "portfolio_missing_optional_data.csv",
+        "description": "Portfolio sample with incomplete optional fields and safe warnings.",
+    },
+    {
+        "name": "candidates_missing_optional_data",
+        "kind": "candidate",
+        "scenario": "missing_optional_data",
+        "filename": "candidates_missing_optional_data.csv",
+        "description": "Candidate sample with incomplete optional fields.",
+    },
+    {
+        "name": "portfolio_invalid_schema",
+        "kind": "portfolio",
+        "scenario": "invalid_schema",
+        "filename": "portfolio_invalid_schema.csv",
+        "description": "Intentionally invalid portfolio schema for validation testing.",
+    },
+    {
+        "name": "candidates_invalid_schema",
+        "kind": "candidate",
+        "scenario": "invalid_schema",
+        "filename": "candidates_invalid_schema.csv",
+        "description": "Intentionally invalid candidate schema for validation testing.",
+    },
+)
 
 
 @dataclass(frozen=True)
@@ -297,6 +343,39 @@ def build_sample_portfolio_csv_text() -> str:
 
 def build_sample_candidate_csv_text() -> str:
     return _records_to_csv_text(CANDIDATE_SAMPLE_ROWS)
+
+
+def get_decision_support_sample_csv_manifest() -> list[dict[str, str]]:
+    rows = []
+    for item in SAMPLE_CSV_FILES:
+        path = SAMPLE_CSV_DIR / item["filename"]
+        rows.append(
+            {
+                **item,
+                "path": str(path),
+                "download_label": build_sample_csv_download_label(item["name"]),
+            }
+        )
+    return rows
+
+
+def load_decision_support_sample_csv_text(name: str) -> str:
+    match = next(
+        (
+            item
+            for item in get_decision_support_sample_csv_manifest()
+            if item["name"] == name
+        ),
+        None,
+    )
+    if match is None:
+        raise ValueError(f"Unknown decision support sample CSV: {name}")
+    return Path(match["path"]).read_text(encoding="utf-8")
+
+
+def build_sample_csv_download_label(name: str) -> str:
+    label = name.replace("_", " ").strip().title()
+    return f"Download {label} CSV"
 
 
 def _normalized_frame(
