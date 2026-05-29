@@ -1,0 +1,6 @@
+symbol,weight_pct,name,sector,country
+MOCK_CORE,40.0,Core Holding Sample,Diversified,US
+MOCK_DEFENSIVE,25.0,Defensive Holding Sample,Healthcare,US
+MOCK_DUPLICATE,10.0,Duplicate Example,Technology,US
+MOCK_DUPLICATE,12.0,Duplicate Example Later Row,Technology,US
+MOCK_NEGATIVE,-5.0,Negative Weight Example,Cash,US

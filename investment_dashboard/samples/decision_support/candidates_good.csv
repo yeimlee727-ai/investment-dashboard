@@ -1,0 +1,5 @@
+symbol,name,sector,country,currency,theme,financial_metric_name,financial_metric_growth_pct,market_reaction_pct,market_cap,volume,total_return_pct,annualized_volatility_pct,max_drawdown_pct,observation_count,risk_data_status
+REVIEW_CLOUD,Cloud Platform Review Candidate,Software,US,USD,Recurring revenue,revenue_growth,28.0,-4.0,210000000000,4200000,9.5,22.0,-12.0,60,ok
+REVIEW_HEALTH,Healthcare Review Candidate,Healthcare,US,USD,Defensive growth,eps_growth,14.0,12.0,95000000000,1800000,8.0,18.0,-9.0,60,ok
+REVIEW_CYCLICAL,Cyclical Review Candidate,Industrials,US,USD,Cyclical recovery,operating_income_growth,-6.0,31.0,65000000000,2500000,18.0,48.0,-34.0,60,ok
+REVIEW_DATA_GAP,Limited Data Review Candidate,Consumer,US,USD,Incomplete data,revenue_growth,,,,,,,,0,missing_price_history

@@ -1,0 +1,3 @@
+ticker_name,weight_percent_bad,name,sector
+MOCK_BAD_A,20.0,Invalid Portfolio Sample A,Technology
+MOCK_BAD_B,15.0,Invalid Portfolio Sample B,Healthcare

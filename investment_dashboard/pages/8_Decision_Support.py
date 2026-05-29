@@ -13,7 +13,9 @@ from src.analysis.decision_support_inputs import (
     build_sample_candidate_csv_text,
     build_sample_portfolio_csv_text,
     get_candidate_csv_schema_rows,
+    get_decision_support_sample_csv_manifest,
     get_portfolio_csv_schema_rows,
+    load_decision_support_sample_csv_text,
 )
 from src.analysis.decision_support_package import build_decision_support_package_summary
 from src.reporting.report_exporter import (
@@ -196,6 +198,39 @@ def _render_schema_guide() -> None:
         st.info(
             "Missing risk metrics are allowed, but the generated package may be marked as partial and should be reviewed manually."
         )
+    _render_sample_csv_pack()
+
+
+def _render_sample_csv_pack() -> None:
+    with st.expander("Sample CSV Pack", expanded=False):
+        st.caption(
+            "These files are sample data for workflow testing only. They are not investment recommendations, and manual review is required."
+        )
+        manifest = get_decision_support_sample_csv_manifest()
+        st.dataframe(
+            localize_columns(
+                pd.DataFrame(
+                    [
+                        {
+                            "name": item["name"],
+                            "kind": item["kind"],
+                            "scenario": item["scenario"],
+                            "description": item["description"],
+                        }
+                        for item in manifest
+                    ]
+                )
+            ),
+            hide_index=True,
+            width="stretch",
+        )
+        for item in manifest:
+            st.download_button(
+                item["download_label"],
+                data=load_decision_support_sample_csv_text(item["name"]),
+                file_name=item["filename"],
+                mime="text/csv",
+            )
 
 
 def _render_validation_results(result) -> None:

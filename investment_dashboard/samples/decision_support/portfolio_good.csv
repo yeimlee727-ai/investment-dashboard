@@ -1,0 +1,5 @@
+symbol,weight_pct,name,sector,country,currency,theme,annualized_volatility_pct,max_drawdown_pct,total_return_pct,risk_data_status
+MOCK_BROAD_ETF,34.0,Broad Market ETF Sample,Diversified,US,USD,Core market exposure,16.2,-9.5,7.4,ok
+MOCK_SEMI_ETF,22.0,Semiconductor ETF Sample,Semiconductors,US,USD,Cyclical technology,31.5,-24.0,18.2,ok
+MOCK_INDIA_ETF,18.0,India Market ETF Sample,Emerging Markets,IN,USD,Regional diversification,27.4,-19.1,11.0,ok
+MOCK_GROWTH,12.0,Growth Stock Sample,Software,US,USD,Quality growth,38.0,-28.5,22.7,ok
