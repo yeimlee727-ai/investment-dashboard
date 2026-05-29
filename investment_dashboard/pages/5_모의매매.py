@@ -35,6 +35,7 @@ from src.ui_helpers import (
 
 POSITION_COLUMNS = [
     "market",
+    "name",
     "symbol",
     "currency",
     "quantity",

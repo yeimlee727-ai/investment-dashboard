@@ -30,17 +30,17 @@ KOREAN_COLUMN_LABELS = {
     "quantity": "수량",
     "avg_price": "평균단가",
     "current_price": "현재가",
-    "market_value": "평가금액(원통화)",
+    "market_value": "평가금액(현지통화)",
     "market_value_krw": "평가금액(원화)",
-    "cost_basis": "매입금액",
+    "cost_basis": "매입금액(현지통화)",
     "cost_basis_krw": "매입금액(원화)",
-    "unrealized_pnl": "평가손익",
+    "unrealized_pnl": "평가손익(현지통화)",
     "unrealized_pnl_krw": "평가손익(원화)",
     "unrealized_pnl_pct": "평가손익률(%)",
-    "realized_pnl": "실현손익",
+    "realized_pnl": "실현손익(현지통화)",
     "realized_pnl_krw": "실현손익(원화)",
     "realized_pnl_pct": "실현손익률(%)",
-    "total_pnl": "총손익",
+    "total_pnl": "총손익(현지통화)",
     "total_pnl_krw": "총손익(원화)",
     "total_pnl_pct": "총손익률(%)",
     "position_weight": "비중",
@@ -384,14 +384,41 @@ def safe_percent(value: object, decimals: int = 2, unavailable: str = "-") -> st
     return f"{number:,.{decimals}f}%"
 
 
-def _format_table_value(column: str, value: object) -> object:
+def safe_currency_amount(
+    value: object,
+    currency: object = None,
+    unavailable: str = "계산 불가",
+) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return unavailable
+    if math.isnan(number) or math.isinf(number):
+        return unavailable
+    currency_text = str(currency or "").upper().strip()
+    if currency_text == "USD":
+        return f"${number:,.2f}"
+    if currency_text == "KRW":
+        return safe_krw(number, unavailable=unavailable)
+    return f"{number:,.2f}"
+
+
+def _format_table_value(
+    column: str, value: object, row: pd.Series | None = None
+) -> object:
     value = format_calculation_value(value)
     if isinstance(value, str):
         return value
-    if any(keyword in column for keyword in ["KRW", "금액", "손익", "수수료", "비용"]):
-        return safe_krw(value, unavailable="계산 불가")
     if any(keyword in column for keyword in ["비중", "수익률", "등락률", "MDD", "(%)"]):
         return safe_percent(value, unavailable="계산 불가")
+    if "현지통화" in column:
+        currency = row.get("통화") if row is not None and "통화" in row else None
+        if currency is None and row is not None and "시장" in row:
+            market = str(row.get("시장") or "").upper()
+            currency = "USD" if market == "US" else "KRW" if market == "KR" else None
+        return safe_currency_amount(value, currency)
+    if any(keyword in column for keyword in ["원화", "KRW", "수수료", "비용"]):
+        return safe_krw(value, unavailable="계산 불가")
     if any(keyword in column for keyword in ["점수", "비율", "환율", "가격", "단가"]):
         try:
             number = float(value)
@@ -409,8 +436,9 @@ def format_display_dataframe(frame: pd.DataFrame) -> pd.DataFrame:
         return frame
     formatted = localized.copy()
     for column in formatted.columns:
-        formatted[column] = formatted[column].map(
-            lambda value, col=str(column): _format_table_value(col, value)
+        formatted[column] = formatted.apply(
+            lambda row, col=str(column): _format_table_value(col, row[col], row),
+            axis=1,
         )
     return formatted
 

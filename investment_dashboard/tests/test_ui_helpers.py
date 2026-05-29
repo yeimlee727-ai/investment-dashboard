@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 
+import pandas as pd
 import plotly.graph_objects as go
 
 from src.ui_helpers import (
@@ -24,7 +25,9 @@ from src.ui_helpers import (
     localize_columns,
     mock_delete_warning_message,
     portfolio_upload_notice_message,
+    format_display_dataframe,
     safe_display_value,
+    safe_currency_amount,
     security_display_label,
     safe_krw,
     safe_percent,
@@ -76,7 +79,7 @@ def test_korean_column_label_helpers() -> None:
     assert korean_column_name("position_weight_krw") == "비중(원화 기준)"
     assert korean_column_name("fx_rate") == "적용 환율"
     assert localized == [
-        {"종목코드": "005930", "평가금액(원통화)": 10.5, "평가금액(원화)": 1000}
+        {"종목코드": "005930", "평가금액(현지통화)": 10.5, "평가금액(원화)": 1000}
     ]
 
 
@@ -137,6 +140,8 @@ def test_calculation_unavailable_display() -> None:
 def test_safe_display_formatters() -> None:
     assert safe_display_value(float("nan")) == "-"
     assert safe_krw(1234567.8) == "1,234,568원"
+    assert safe_currency_amount(123.3, "USD") == "$123.30"
+    assert safe_currency_amount(1234567.8, "KRW") == "1,234,568원"
     assert safe_percent(12.345) == "12.35%"
 
 
@@ -145,6 +150,46 @@ def test_security_display_label_prefers_name_and_falls_back_to_symbol() -> None:
     assert security_display_label("", "005930") == "005930"
     assert security_display_label(None, "GRAB") == "GRAB"
     assert safe_percent(float("inf")) == "-"
+
+
+def test_format_display_dataframe_separates_currency_and_percent_columns() -> None:
+    frame = format_display_dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "symbol": "GRAB",
+                    "name": "Grab Holdings",
+                    "currency": "USD",
+                    "market_value": 123.3,
+                    "market_value_krw": 166455,
+                    "unrealized_pnl": 16.5,
+                    "unrealized_pnl_krw": 22275,
+                    "unrealized_pnl_pct": 15.45,
+                    "total_pnl_pct": 15.45,
+                },
+                {
+                    "symbol": "005930",
+                    "name": "삼성전자",
+                    "currency": "KRW",
+                    "market_value": 1592623,
+                    "market_value_krw": 1592623,
+                    "unrealized_pnl": 155000,
+                    "unrealized_pnl_krw": 155000,
+                    "unrealized_pnl_pct": 10.78,
+                    "total_pnl_pct": 10.78,
+                },
+            ]
+        )
+    )
+
+    assert frame.loc[0, "평가금액(현지통화)"] == "$123.30"
+    assert frame.loc[0, "평가금액(원화)"] == "166,455원"
+    assert frame.loc[0, "평가손익(현지통화)"] == "$16.50"
+    assert frame.loc[0, "평가손익(원화)"] == "22,275원"
+    assert frame.loc[0, "평가손익률(%)"] == "15.45%"
+    assert frame.loc[0, "총손익률(%)"] == "15.45%"
+    assert "원" not in frame.loc[0, "평가손익률(%)"]
+    assert frame.loc[1, "평가금액(현지통화)"] == "1,592,623원"
 
 
 def test_plotly_dark_theme_helper_keeps_figure_valid() -> None:
