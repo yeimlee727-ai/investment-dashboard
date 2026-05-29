@@ -12,7 +12,7 @@ from src.data_providers.market_data_provider import MarketDataProvider
 KOREAN_COLUMN_LABELS = {
     "symbol": "종목코드",
     "name": "종목명",
-    "display_label": "표시명",
+    "display_label": "종목명",
     "market": "시장",
     "sector": "섹터",
     "memo": "메모",

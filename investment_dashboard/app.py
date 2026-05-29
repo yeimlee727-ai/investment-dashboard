@@ -38,6 +38,7 @@ from src.ui_helpers import (
     render_page_header,
     safe_krw,
     safe_percent,
+    security_display_label,
 )
 
 STRATEGIES = ["EMA20 상향 돌파 + 거래량 증가", "RSI 30 이하 반등", "신고가 돌파"]
@@ -247,16 +248,44 @@ def render_watchlist_summary(
             render_metric_card(label, value, tone=tone)
 
 
-def render_scanner_summary(scored: pd.DataFrame) -> None:
+def build_scanner_summary_view(
+    scored: pd.DataFrame, watchlist: list[WatchlistItem] | None = None
+) -> pd.DataFrame:
+    if scored.empty:
+        return pd.DataFrame()
+    view = scored.sort_values("score", ascending=False).head(7).copy()
+    name_lookup = {
+        (str(item.market).upper(), str(item.symbol).upper()): item.name
+        for item in watchlist or []
+    }
+    for optional in ["risk_tag", "risk_penalty", "data_source"]:
+        if optional not in view.columns:
+            view[optional] = ""
+
+    def row_name(row: pd.Series) -> str:
+        existing = str(row.get("name") or row.get("종목명") or "").strip()
+        if existing:
+            return existing
+        key = (str(row.get("market", "")).upper(), str(row.get("symbol", "")).upper())
+        return str(name_lookup.get(key, "") or "")
+
+    view["display_label"] = view.apply(
+        lambda row: security_display_label(row_name(row), row.get("symbol")),
+        axis=1,
+    )
+    return view
+
+
+def render_scanner_summary(
+    scored: pd.DataFrame, watchlist: list[WatchlistItem] | None = None
+) -> None:
     st.subheader("스캐너 상위 종목 요약")
     if scored.empty:
         st.info("스캐너 요약을 표시할 데이터가 없습니다.")
         return
-    view = scored.sort_values("score", ascending=False).head(7).copy()
-    for optional in ["risk_tag", "risk_penalty", "data_source"]:
-        if optional not in view.columns:
-            view[optional] = ""
+    view = build_scanner_summary_view(scored, watchlist)
     columns = [
+        "display_label",
         "symbol",
         "market",
         "score",
@@ -271,13 +300,27 @@ def render_scanner_summary(scored: pd.DataFrame) -> None:
         hide_index=True,
         width="stretch",
     )
+    hover_data: dict[str, bool | str] = {
+        "display_label": False,
+        "symbol": True,
+        "market": True,
+        "score": ":.2f",
+    }
+    if "change_pct" in view.columns:
+        hover_data["change_pct"] = ":.2f"
+    if "volume_ratio" in view.columns:
+        hover_data["volume_ratio"] = ":.2f"
     fig = px.bar(
         view.sort_values("score"),
         x="score",
-        y="symbol",
+        y="display_label",
         orientation="h",
         title="상위 종목 점수",
+        labels={"score": "점수", "display_label": "종목명"},
+        hover_data=hover_data,
     )
+    fig.update_layout(height=max(340, 52 * len(view) + 120))
+    fig.update_yaxes(title_text="")
     st.plotly_chart(apply_plotly_dark_theme(fig), width="stretch")
     st.caption("점수는 스캐너 요약 지표이며 매수/매도 실행 지시가 아닙니다.")
 
@@ -683,7 +726,7 @@ def main() -> None:
     render_watchlist_summary(summarize_watchlist(watchlist, quotes), watchlist)
     left, right = st.columns([1.5, 1])
     with left:
-        render_scanner_summary(scored)
+        render_scanner_summary(scored, watchlist)
     with right:
         render_dart_summary(disclosures)
 

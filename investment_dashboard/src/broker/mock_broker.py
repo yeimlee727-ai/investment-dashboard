@@ -280,6 +280,9 @@ class MockBroker(Broker):
             if p.get("realized_pnl_krw") is not None
         )
         total_pnl = total_unrealized_pnl + total_realized_pnl
+        total_pnl_pct = (
+            round(total_pnl / valued_cost_basis * 100, 2) if valued_cost_basis else 0.0
+        )
         max_loss = min(
             valued_positions,
             key=lambda item: float(item.get("total_pnl_krw") or 0),
@@ -318,6 +321,7 @@ class MockBroker(Broker):
             "total_realized_pnl_krw": round(total_realized_pnl, 2),
             "total_pnl": round(total_pnl, 2),
             "total_pnl_krw": round(total_pnl, 2),
+            "total_pnl_pct": total_pnl_pct,
             "position_count": len(positions),
             "cash_balance": None,
             "top1_weight": max(

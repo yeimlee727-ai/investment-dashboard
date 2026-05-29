@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+from types import SimpleNamespace
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -150,6 +151,27 @@ def test_security_display_label_prefers_name_and_falls_back_to_symbol() -> None:
     assert security_display_label("", "005930") == "005930"
     assert security_display_label(None, "GRAB") == "GRAB"
     assert safe_percent(float("inf")) == "-"
+
+
+def test_home_scanner_summary_view_prefers_watchlist_name() -> None:
+    app = importlib.import_module("app")
+    scored = pd.DataFrame(
+        [
+            {"symbol": "453870", "market": "KR", "score": 80.0},
+            {"symbol": "GRAB", "market": "US", "score": 70.0},
+        ]
+    )
+    watchlist = [
+        SimpleNamespace(symbol="453870", market="KR", name="ACE 미국빅테크TOP7 Plus"),
+        SimpleNamespace(symbol="GRAB", market="US", name=""),
+    ]
+
+    view = app.build_scanner_summary_view(scored, watchlist)
+
+    by_symbol = {row["symbol"]: row for row in view.to_dict("records")}
+    assert by_symbol["453870"]["display_label"] == "ACE 미국빅테크TOP7 Plus"
+    assert by_symbol["GRAB"]["display_label"] == "GRAB"
+    assert "symbol" in view.columns
 
 
 def test_format_display_dataframe_separates_currency_and_percent_columns() -> None:

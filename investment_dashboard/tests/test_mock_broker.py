@@ -300,6 +300,70 @@ def test_mixed_kr_us_portfolio_summary_uses_krw_totals(isolated_session) -> None
     assert summary["top1_weight_krw"] == 81.08
 
 
+def test_brokerage_reference_krw_positions_match_table_and_summary_totals(
+    isolated_session,
+) -> None:
+    broker = make_broker(
+        FakeProvider(
+            {
+                ("KR", "360750"): 28_300,
+                ("KR", "390390"): 62_070,
+                ("KR", "453870"): 12_465,
+            }
+        )
+    )
+    with isolated_session() as session:
+        session.add_all(
+            [
+                WatchlistItem(symbol="360750", market="KR", name="TIGER 미국S&P500"),
+                WatchlistItem(symbol="390390", market="KR", name="KODEX 미국반도체"),
+                WatchlistItem(symbol="453870", market="KR", name="TIGER 인도니프티50"),
+            ]
+        )
+        session.commit()
+    orders = [
+        OrderRequest("360750", "BUY", 31, 26_244, "KR"),
+        OrderRequest("390390", "BUY", 16, 48_531, "KR"),
+        OrderRequest("453870", "BUY", 61, 12_883, "KR"),
+    ]
+    for request in orders:
+        assert broker.place_order(request).status == "filled"
+
+    positions = broker.get_positions()
+    summary = broker.get_portfolio_summary()
+    by_symbol = {position["symbol"]: position for position in positions}
+
+    assert by_symbol["360750"]["name"] == "TIGER 미국S&P500"
+    assert by_symbol["390390"]["market_value_krw"] == 993_120
+    assert by_symbol["360750"]["market_value_krw"] == 877_300
+    assert by_symbol["453870"]["market_value_krw"] == 760_365
+    assert by_symbol["360750"]["unrealized_pnl_krw"] == 63_736
+    assert by_symbol["390390"]["unrealized_pnl_krw"] == 216_624
+    assert by_symbol["453870"]["unrealized_pnl_krw"] == -25_498
+
+    table_market_total = sum(
+        float(position["market_value_krw"]) for position in positions
+    )
+    table_cost_total = sum(float(position["cost_basis_krw"]) for position in positions)
+    table_unrealized_total = sum(
+        float(position["unrealized_pnl_krw"]) for position in positions
+    )
+    table_realized_total = sum(
+        float(position["realized_pnl_krw"]) for position in positions
+    )
+    expected_total_pnl = table_unrealized_total + table_realized_total
+
+    assert table_market_total == 2_630_785
+    assert summary["total_market_value_krw"] == table_market_total
+    assert summary["total_cost_basis_krw"] == table_cost_total
+    assert summary["total_pnl_krw"] == expected_total_pnl
+    assert summary["total_pnl_pct"] == round(
+        expected_total_pnl / table_cost_total * 100,
+        2,
+    )
+    assert summary["top1_weight_krw"] == 37.75
+
+
 def test_position_weight_krw_uses_fx_converted_total(isolated_session) -> None:
     broker = make_broker(
         FakeProvider({("KR", "005930"): 1000, ("US", "GRAB"): 10}, fx_rate=1000)
