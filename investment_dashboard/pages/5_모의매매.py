@@ -77,8 +77,8 @@ def render_summary_cards(summary: dict[str, object]) -> None:
         [
             ("총 실현손익 KRW", f"{float(summary['total_realized_pnl_krw']):,.0f}"),
             ("총 손익 KRW", f"{float(summary['total_pnl_krw']):,.0f}"),
+            ("총 손익률", f"{float(summary['total_pnl_pct']):.2f}%"),
             ("보유 종목 수", f"{int(summary['position_count'])}"),
-            ("현금 잔액", "추적 없음"),
         ],
         [
             ("상위 1개 비중 KRW", f"{float(summary['top1_weight_krw']):.2f}%"),
