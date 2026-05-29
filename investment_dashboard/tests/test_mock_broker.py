@@ -9,7 +9,7 @@ from src.broker.base import OrderRequest
 from src.broker.mock_broker import MockBroker
 from src.data_providers.base import FXRate
 from src.data_providers.sample_provider import SampleDataProvider
-from src.models import RealizedPnlLog, VirtualOrder, VirtualPosition
+from src.models import RealizedPnlLog, VirtualOrder, VirtualPosition, WatchlistItem
 from src.risk.risk_engine import RiskConfig, RiskEngine
 
 
@@ -172,6 +172,29 @@ def test_position_profit_report_fields_are_calculated(isolated_session) -> None:
     assert position["updated_at"] is not None
 
 
+def test_position_row_includes_watchlist_name_or_symbol_fallback(
+    isolated_session,
+) -> None:
+    broker = make_broker(
+        FakeProvider({("KR", "005930"): 1200, ("US", "GRAB"): 4.11}, fx_rate=1350)
+    )
+    with isolated_session() as session:
+        session.add(WatchlistItem(symbol="005930", market="KR", name="삼성전자"))
+        session.commit()
+    broker.place_order(
+        OrderRequest(symbol="005930", market="KR", side="BUY", quantity=10, price=1000)
+    )
+    broker.place_order(
+        OrderRequest(symbol="GRAB", market="US", side="BUY", quantity=30, price=3.56)
+    )
+
+    positions = broker.get_positions()
+    by_symbol = {position["symbol"]: position for position in positions}
+
+    assert by_symbol["005930"]["name"] == "삼성전자"
+    assert by_symbol["GRAB"]["name"] == "GRAB"
+
+
 def test_us_position_uses_fx_for_krw_values(isolated_session) -> None:
     broker = make_broker(FakeProvider({("US", "GRAB"): 4.0}, fx_rate=1400.0))
     broker.place_order(
@@ -182,6 +205,10 @@ def test_us_position_uses_fx_for_krw_values(isolated_session) -> None:
 
     assert position["currency"] == "USD"
     assert position["market_value"] == 400
+    assert position["cost_basis"] == 300
+    assert position["unrealized_pnl"] == 100
+    assert position["unrealized_pnl_pct"] == 33.33
+    assert position["total_pnl_pct"] == 33.33
     assert position["market_value_krw"] == 560_000
     assert position["cost_basis_krw"] == 420_000
     assert position["unrealized_pnl_krw"] == 140_000

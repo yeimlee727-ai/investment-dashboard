@@ -9,7 +9,13 @@ from sqlalchemy.orm import Session
 from src.broker.base import Broker, OrderRequest, OrderResult
 from src.database import get_session
 from src.data_providers.market_data_provider import MarketDataProvider
-from src.models import RealizedPnlLog, VirtualOrder, VirtualPosition, utc_now
+from src.models import (
+    RealizedPnlLog,
+    VirtualOrder,
+    VirtualPosition,
+    WatchlistItem,
+    utc_now,
+)
 from src.risk.risk_engine import RiskEngine
 
 PortfolioImportRow = dict[str, float | int | str | None]
@@ -125,6 +131,7 @@ class MockBroker(Broker):
                 .all()
             )
             rows: list[dict[str, float | int | str | datetime | None]] = []
+            name_map = self._position_name_map(session)
             for p in positions:
                 price_key = f"{p.market}:{p.symbol}"
                 override_price = current_prices.get(price_key) or current_prices.get(
@@ -175,6 +182,7 @@ class MockBroker(Broker):
                     {
                         "market": p.market,
                         "symbol": p.symbol,
+                        "name": name_map.get((p.market, p.symbol), p.symbol),
                         "currency": currency,
                         "quantity": p.quantity,
                         "avg_price": round(p.avg_price, 2),
@@ -618,6 +626,14 @@ class MockBroker(Broker):
             )
         with get_session() as new_session:
             return self._count_positions(new_session)
+
+    def _position_name_map(self, session: Session) -> dict[tuple[str, str], str]:
+        items = session.execute(select(WatchlistItem)).scalars().all()
+        return {
+            (str(item.market).upper(), str(item.symbol).upper()): item.name
+            for item in items
+            if item.name
+        }
 
     def _apply_buy(
         self,
