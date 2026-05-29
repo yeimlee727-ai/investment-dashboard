@@ -12,6 +12,7 @@ from src.data_providers.market_data_provider import MarketDataProvider
 KOREAN_COLUMN_LABELS = {
     "symbol": "종목코드",
     "name": "종목명",
+    "display_label": "표시명",
     "market": "시장",
     "sector": "섹터",
     "memo": "메모",
@@ -436,6 +437,13 @@ def format_metric_number(
     if math.isnan(number) or math.isinf(number):
         return unavailable
     return f"{number:,.{decimals}f}{suffix}"
+
+
+def security_display_label(name: object = None, symbol: object = None) -> str:
+    name_text = safe_display_value(name, unavailable="").strip()
+    if name_text:
+        return name_text
+    return safe_display_value(symbol, unavailable="-").strip()
 
 
 def apply_plotly_dark_theme(fig: go.Figure) -> go.Figure:

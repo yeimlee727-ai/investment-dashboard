@@ -18,13 +18,17 @@ from src.ui_helpers import (
     render_data_warning,
     render_metric_card,
     render_page_header,
+    security_display_label,
 )
 
 
-def load_watchlist_pairs() -> list[tuple[str, str]]:
+def load_watchlist_items() -> list[dict[str, str]]:
     with get_session() as session:
         items = session.execute(select(WatchlistItem)).scalars().all()
-        return [(item.symbol, item.market) for item in items]
+        return [
+            {"symbol": item.symbol, "market": item.market, "name": item.name or ""}
+            for item in items
+        ]
 
 
 def main() -> None:
@@ -41,13 +45,18 @@ def main() -> None:
     )
     provider = build_market_data_provider()
 
-    pairs = load_watchlist_pairs()
-    if not pairs:
+    watchlist_items = load_watchlist_items()
+    if not watchlist_items:
         st.info("먼저 관심종목을 등록하세요.")
         return
+    name_map = {
+        (item["market"], item["symbol"]): item["name"] for item in watchlist_items
+    }
     frames = {
-        f"{market}:{symbol}": provider.get_price_history(symbol, market, 180)
-        for symbol, market in pairs
+        f"{item['market']}:{item['symbol']}": provider.get_price_history(
+            item["symbol"], item["market"], 180
+        )
+        for item in watchlist_items
     }
     scanned = StockScanner().scan(frames)
     if provider.mode == "REAL_WITH_FALLBACK" and not scanned.empty:
@@ -58,6 +67,17 @@ def main() -> None:
     render_data_warning(provider)
     disclosures = DartClient().search_disclosures(page_count=20)
     scored = ScoringEngine().score_dataframe(scanned, disclosures=disclosures)
+    if not scored.empty:
+        scored["name"] = scored.apply(
+            lambda row: name_map.get(
+                (str(row.get("market")), str(row.get("symbol"))), ""
+            ),
+            axis=1,
+        )
+        scored["display_label"] = scored.apply(
+            lambda row: security_display_label(row.get("name"), row.get("symbol")),
+            axis=1,
+        )
     summary_cols = st.columns(4)
     with summary_cols[0]:
         render_metric_card("스캔 종목 수", len(scored), tone="neutral")
@@ -100,7 +120,9 @@ def main() -> None:
         view = view[view[mapping[label]]]
 
     display_columns = [
+        "display_label",
         "symbol",
+        "name",
         "market",
         "score",
         "change_pct",
@@ -118,9 +140,41 @@ def main() -> None:
     st.dataframe(localize_columns(display), hide_index=True, width="stretch")
     if not display.empty and "score" in view.columns:
         chart = view.sort_values("score", ascending=False).head(10)
+        hover_data = {
+            "display_label": False,
+            "symbol": True,
+            "market": True,
+            "score": ":.1f",
+        }
+        for column, formatter in [
+            ("change_pct", ":.2f"),
+            ("volume_ratio", ":.2f"),
+            ("risk_tag", True),
+        ]:
+            if column in chart.columns:
+                hover_data[column] = formatter
         fig = px.bar(
-            chart, x="score", y="symbol", orientation="h", title="스캐너 상위 점수"
+            chart.sort_values("score", ascending=True),
+            x="score",
+            y="display_label",
+            orientation="h",
+            title="스캐너 상위 점수",
+            color="score",
+            color_continuous_scale=["#334155", "#38bdf8"],
+            hover_data=hover_data,
+            labels={
+                "display_label": "종목명",
+                "score": "점수",
+                "change_pct": "등락률(%)",
+                "volume_ratio": "거래량 비율",
+                "risk_tag": "리스크 태그",
+            },
         )
+        fig.update_layout(
+            height=max(360, 42 * len(chart) + 120),
+            coloraxis_showscale=False,
+        )
+        fig.update_traces(marker_line_width=0)
         st.plotly_chart(apply_plotly_dark_theme(fig), width="stretch")
     if not view.empty:
         selected = st.selectbox("AI 코멘트 프롬프트 확인", view["symbol"].tolist())

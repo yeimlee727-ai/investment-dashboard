@@ -258,9 +258,9 @@ class MockBroker(Broker):
             and position.get("unrealized_pnl_krw") is not None
         ]
         total_market_value = sum(float(p["market_value_krw"]) for p in valued_positions)
-        total_cost_basis = sum(
+        valued_cost_basis = sum(
             float(p["cost_basis_krw"])
-            for p in positions
+            for p in valued_positions
             if p.get("cost_basis_krw") is not None
         )
         total_unrealized_pnl = sum(
@@ -297,13 +297,13 @@ class MockBroker(Broker):
         return {
             "total_market_value": round(total_market_value, 2),
             "total_market_value_krw": round(total_market_value, 2),
-            "total_cost_basis": round(total_cost_basis, 2),
-            "total_cost_basis_krw": round(total_cost_basis, 2),
+            "total_cost_basis": round(valued_cost_basis, 2),
+            "total_cost_basis_krw": round(valued_cost_basis, 2),
             "total_unrealized_pnl": round(total_unrealized_pnl, 2),
             "total_unrealized_pnl_krw": round(total_unrealized_pnl, 2),
             "total_unrealized_pnl_pct": (
-                round(total_unrealized_pnl / total_cost_basis * 100, 2)
-                if total_cost_basis
+                round(total_unrealized_pnl / valued_cost_basis * 100, 2)
+                if valued_cost_basis
                 else 0.0
             ),
             "total_realized_pnl": round(total_realized_pnl, 2),

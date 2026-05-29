@@ -17,6 +17,7 @@ from src.analysis.decision_support_inputs import (
     build_sample_candidate_csv_text,
     build_sample_portfolio_csv_text,
     build_csv_input_decision_support_context,
+    build_decision_cockpit_summary,
     build_decision_support_display_summary,
     get_candidate_csv_schema_rows,
     get_decision_support_sample_csv_manifest,
@@ -277,6 +278,70 @@ def test_required_field_errors_override_package_summary_values() -> None:
     assert summary["data_status"] == "validation issue"
     assert summary["candidate_review_count"] == "N/A"
     assert summary["action_plan_count"] == "N/A"
+
+
+def test_decision_cockpit_summary_for_good_data_is_compact() -> None:
+    result = run_csv_input_decision_support_pipeline(
+        pd.read_csv(StringIO(load_decision_support_sample_csv_text("portfolio_good"))),
+        pd.read_csv(StringIO(load_decision_support_sample_csv_text("candidates_good"))),
+    )
+    package = result.decision_support_package
+
+    cards = build_decision_cockpit_summary(
+        validation_status=result.validation_status,
+        validation_errors=result.validation_errors,
+        validation_warnings=result.validation_warnings,
+        risk_insight_summary=package.risk_insight_summary,
+        candidate_score_summary=package.candidate_score_summary,
+        portfolio_fit_summary=package.portfolio_fit_summary,
+        action_plan_summary=package.action_plan_summary,
+    )
+
+    assert [card["title"] for card in cards] == [
+        "Portfolio Status",
+        "Candidate Review Priority",
+        "Key Risk Alerts",
+        "Next Manual Review Actions",
+    ]
+    assert cards[1]["value"] in {
+        "High-priority review",
+        "Standard review",
+        "Caution review",
+        "Insufficient data",
+    }
+
+
+def test_decision_cockpit_summary_for_partial_data_is_conservative() -> None:
+    cards = build_decision_cockpit_summary(
+        validation_status="partial",
+        validation_errors=[],
+        validation_warnings=["Optional risk metric missing."],
+        risk_insight_summary={"missing_data_count": 1},
+        candidate_score_summary={"insufficient_data_count": 1},
+        portfolio_fit_summary={},
+        action_plan_summary={},
+    )
+
+    assert cards[0]["value"] == "Data incomplete"
+    assert cards[1]["value"] == "Insufficient data"
+    assert cards[2]["value"] == "Insufficient data"
+
+
+def test_decision_cockpit_summary_blocks_optimistic_validation_error() -> None:
+    cards = build_decision_cockpit_summary(
+        validation_status="invalid",
+        validation_errors=["Required candidate column missing: symbol."],
+        validation_warnings=[],
+        risk_insight_summary={"high_severity_count": 0},
+        candidate_score_summary={"high_priority_review_count": 2},
+        portfolio_fit_summary={"concentration_caution_symbols": ["AAPL"]},
+        action_plan_summary={"ready_for_manual_review_count": 2},
+    )
+
+    assert cards[0]["value"] == "Validation issue"
+    assert cards[1]["value"] == "Review blocked"
+    assert cards[2]["value"] == "Fix validation errors first"
+    assert cards[3]["value"] == "Fix required CSV columns"
 
 
 def test_valid_candidate_csv_like_frame_normalizes_correctly() -> None:

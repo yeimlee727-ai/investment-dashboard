@@ -10,6 +10,7 @@ from src.analysis.decision_support_demo import (
     run_end_to_end_decision_support_demo,
 )
 from src.analysis.decision_support_inputs import (
+    build_decision_cockpit_summary,
     build_sample_candidate_csv_text,
     build_sample_portfolio_csv_text,
     build_decision_support_display_summary,
@@ -24,7 +25,12 @@ from src.reporting.report_exporter import (
     build_decision_support_html_bytes,
     build_decision_support_report_filename,
 )
-from src.ui_helpers import inject_global_css, localize_columns, render_page_header
+from src.ui_helpers import (
+    inject_global_css,
+    localize_columns,
+    render_metric_card,
+    render_page_header,
+)
 
 
 def main() -> None:
@@ -85,6 +91,8 @@ def _render_result(result, mode: str) -> None:
     if mode == "Uploaded CSV data":
         _render_validation_results(result, display_summary)
 
+    _render_decision_cockpit(result)
+
     with st.expander("Safety flags", expanded=True):
         flags = pd.DataFrame(
             [
@@ -141,6 +149,32 @@ def _render_result(result, mode: str) -> None:
         "Use this preview to inspect package structure, data status, safety flags, and review text. "
         "Manual validation is required before any investment decision."
     )
+
+
+def _render_decision_cockpit(result) -> None:
+    package = result.decision_support_package
+    cards = build_decision_cockpit_summary(
+        validation_status=result.validation_status,
+        validation_errors=result.validation_errors,
+        validation_warnings=result.validation_warnings,
+        risk_insight_summary=package.risk_insight_summary,
+        candidate_score_summary=package.candidate_score_summary,
+        portfolio_fit_summary=package.portfolio_fit_summary,
+        action_plan_summary=package.action_plan_summary,
+    )
+    st.subheader("Decision Cockpit Summary")
+    st.caption(
+        "A compact, read-only summary for manual review. Detailed tables remain below."
+    )
+    cols = st.columns(4)
+    for col, card in zip(cols, cards, strict=True):
+        with col:
+            render_metric_card(
+                card["title"],
+                card["value"],
+                delta=card["note"],
+                tone=card["tone"],
+            )
 
 
 def _render_uploaded_csv_mode():

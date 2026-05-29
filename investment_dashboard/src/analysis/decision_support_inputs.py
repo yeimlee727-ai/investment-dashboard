@@ -423,6 +423,140 @@ def build_decision_support_display_summary(
     }
 
 
+def build_decision_cockpit_summary(
+    validation_status: str,
+    validation_errors: list[str] | tuple[str, ...],
+    validation_warnings: list[str] | tuple[str, ...],
+    risk_insight_summary: dict[str, Any] | None = None,
+    candidate_score_summary: dict[str, Any] | None = None,
+    portfolio_fit_summary: dict[str, Any] | None = None,
+    action_plan_summary: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    if validation_errors:
+        return [
+            _cockpit_card(
+                "Portfolio Status",
+                "Validation issue",
+                "Required CSV fields must be fixed before the review is reliable.",
+                "warning",
+            ),
+            _cockpit_card(
+                "Candidate Review Priority",
+                "Review blocked",
+                "Candidate review is paused until required columns are present.",
+                "warning",
+            ),
+            _cockpit_card(
+                "Key Risk Alerts",
+                "Fix validation errors first",
+                "Risk flags may be incomplete while required fields are missing.",
+                "warning",
+            ),
+            _cockpit_card(
+                "Next Manual Review Actions",
+                "Fix required CSV columns",
+                "Update the uploaded CSV file, then rerun the local review.",
+                "info",
+            ),
+        ]
+
+    risk_summary = risk_insight_summary or {}
+    candidate_summary = candidate_score_summary or {}
+    fit_summary = portfolio_fit_summary or {}
+    action_summary = action_plan_summary or {}
+
+    missing_data_count = _safe_int(risk_summary.get("missing_data_count"))
+    high_severity = _safe_int(risk_summary.get("high_severity_count"))
+    caution_count = _safe_int(risk_summary.get("caution_count"))
+    high_priority = _safe_int(candidate_summary.get("high_priority_review_count"))
+    caution_review = _safe_int(candidate_summary.get("caution_review_count"))
+    insufficient = _safe_int(candidate_summary.get("insufficient_data_count"))
+    concentration = _as_list(fit_summary.get("concentration_caution_symbols"))
+    caution_symbols = _as_list(action_summary.get("caution_symbols"))
+
+    if validation_status == "partial" or validation_warnings or missing_data_count:
+        portfolio_status = "Data incomplete"
+        portfolio_note = "Some inputs are missing or normalized; review warnings first."
+        portfolio_tone = "warning"
+    elif high_severity:
+        portfolio_status = "High risk"
+        portfolio_note = f"{high_severity} high-severity risk item(s) need review."
+        portfolio_tone = "warning"
+    elif caution_count:
+        portfolio_status = "Watchlist"
+        portfolio_note = f"{caution_count} caution item(s) should be reviewed."
+        portfolio_tone = "info"
+    else:
+        portfolio_status = "Stable"
+        portfolio_note = "No elevated portfolio-level risk flag was found."
+        portfolio_tone = "success"
+
+    if high_priority:
+        candidate_status = "High-priority review"
+        candidate_note = (
+            f"{high_priority} candidate(s) ranked higher for manual review."
+        )
+        candidate_tone = "info"
+    elif caution_review:
+        candidate_status = "Caution review"
+        candidate_note = (
+            f"{caution_review} candidate(s) need extra data or risk review."
+        )
+        candidate_tone = "warning"
+    elif insufficient:
+        candidate_status = "Insufficient data"
+        candidate_note = "Candidate review is limited by incomplete data."
+        candidate_tone = "warning"
+    else:
+        candidate_status = "Standard review"
+        candidate_note = "Candidate review can proceed with normal manual checks."
+        candidate_tone = "success"
+
+    if high_severity:
+        risk_status = f"{high_severity} high-severity risk alert(s)"
+        risk_note = "Review elevated volatility, drawdown, or missing-data items."
+        risk_tone = "warning"
+    elif concentration:
+        risk_status = "Concentration watch"
+        risk_note = f"Check concentration impact for {', '.join(concentration[:3])}."
+        risk_tone = "warning"
+    elif missing_data_count:
+        risk_status = "Insufficient data"
+        risk_note = "Risk review is limited by missing market-risk data."
+        risk_tone = "warning"
+    else:
+        risk_status = "No major alert"
+        risk_note = "No major risk alert was found in the provided data."
+        risk_tone = "success"
+
+    if validation_status == "partial" or validation_warnings:
+        action_status = "Check missing fields"
+        action_note = "Review validation warnings before using the detailed report."
+    elif concentration or caution_symbols:
+        action_status = "Reconfirm concentration risk"
+        action_note = "Review portfolio fit and concentration cautions manually."
+    elif high_priority:
+        action_status = "Review top candidates"
+        action_note = "Inspect higher-ranked review candidates and supporting metrics."
+    else:
+        action_status = "Download report for detailed review"
+        action_note = "Use the local report for a slower manual review."
+
+    return [
+        _cockpit_card(
+            "Portfolio Status", portfolio_status, portfolio_note, portfolio_tone
+        ),
+        _cockpit_card(
+            "Candidate Review Priority",
+            candidate_status,
+            candidate_note,
+            candidate_tone,
+        ),
+        _cockpit_card("Key Risk Alerts", risk_status, risk_note, risk_tone),
+        _cockpit_card("Next Manual Review Actions", action_status, action_note, "info"),
+    ]
+
+
 def _normalized_frame(
     value: pd.DataFrame | list[dict[str, Any]] | None,
 ) -> pd.DataFrame:
@@ -440,6 +574,26 @@ def _normalized_frame(
         columns={column: COLUMN_ALIASES.get(column, column) for column in frame.columns}
     )
     return frame
+
+
+def _cockpit_card(title: str, value: str, note: str, tone: str) -> dict[str, str]:
+    return {"title": title, "value": value, "note": note, "tone": tone}
+
+
+def _safe_int(value: Any) -> int:
+    try:
+        number = int(float(value))
+    except (TypeError, ValueError):
+        return 0
+    return 0 if not math.isfinite(number) else number
+
+
+def _as_list(value: Any) -> list[str]:
+    if isinstance(value, list | tuple):
+        return [str(item) for item in value if str(item).strip()]
+    if value:
+        return [str(value)]
+    return []
 
 
 def _schema_rows(
