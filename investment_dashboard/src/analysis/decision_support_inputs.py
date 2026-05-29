@@ -378,6 +378,51 @@ def build_sample_csv_download_label(name: str) -> str:
     return f"Download {label} CSV"
 
 
+def build_decision_support_display_summary(
+    validation_status: str,
+    validation_errors: list[str] | tuple[str, ...],
+    validation_warnings: list[str] | tuple[str, ...],
+    package_data_status: str,
+    included_sections_count: int,
+    missing_sections_count: int,
+    candidate_review_count: int,
+    action_plan_count: int,
+) -> dict[str, str | int]:
+    if validation_errors:
+        return {
+            "validation_label": "Missing required fields",
+            "validation_note": (
+                "Analysis is blocked until required CSV columns are fixed."
+            ),
+            "data_status": "validation issue",
+            "included_sections": included_sections_count,
+            "missing_sections": missing_sections_count,
+            "candidate_review_count": "N/A",
+            "action_plan_count": "N/A",
+        }
+    if validation_status == "partial" or validation_warnings:
+        return {
+            "validation_label": "Partial data",
+            "validation_note": (
+                "Uploaded CSV data can be reviewed, but warnings should be checked."
+            ),
+            "data_status": package_data_status,
+            "included_sections": included_sections_count,
+            "missing_sections": missing_sections_count,
+            "candidate_review_count": candidate_review_count,
+            "action_plan_count": action_plan_count,
+        }
+    return {
+        "validation_label": "Ready",
+        "validation_note": "Uploaded CSV data passed local validation.",
+        "data_status": package_data_status,
+        "included_sections": included_sections_count,
+        "missing_sections": missing_sections_count,
+        "candidate_review_count": candidate_review_count,
+        "action_plan_count": action_plan_count,
+    }
+
+
 def _normalized_frame(
     value: pd.DataFrame | list[dict[str, Any]] | None,
 ) -> pd.DataFrame:

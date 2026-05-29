@@ -17,6 +17,7 @@ from src.analysis.decision_support_inputs import (
     build_sample_candidate_csv_text,
     build_sample_portfolio_csv_text,
     build_csv_input_decision_support_context,
+    build_decision_support_display_summary,
     get_candidate_csv_schema_rows,
     get_decision_support_sample_csv_manifest,
     get_portfolio_csv_schema_rows,
@@ -190,6 +191,92 @@ def test_invalid_schema_sample_csv_files_fail_validation() -> None:
     )
     assert candidate_validation.is_valid is False
     assert "Required candidate column missing: symbol." in candidate_validation.errors
+
+
+def test_good_sample_display_summary_remains_valid() -> None:
+    result = run_csv_input_decision_support_pipeline(
+        pd.read_csv(StringIO(load_decision_support_sample_csv_text("portfolio_good"))),
+        pd.read_csv(StringIO(load_decision_support_sample_csv_text("candidates_good"))),
+    )
+    summary = _display_summary_for_result(result)
+
+    assert summary["validation_label"] == "Ready"
+    assert summary["data_status"] in {"ok", "partial"}
+    assert summary["candidate_review_count"] == len(result.candidate_scores)
+    assert summary["action_plan_count"] == len(result.action_plans)
+
+
+def test_missing_optional_sample_display_summary_shows_partial_behavior() -> None:
+    result = run_csv_input_decision_support_pipeline(
+        pd.read_csv(
+            StringIO(
+                load_decision_support_sample_csv_text("portfolio_missing_optional_data")
+            )
+        ),
+        pd.read_csv(
+            StringIO(
+                load_decision_support_sample_csv_text(
+                    "candidates_missing_optional_data"
+                )
+            )
+        ),
+    )
+    summary = _display_summary_for_result(result)
+
+    assert summary["validation_label"] == "Partial data"
+    assert summary["candidate_review_count"] == len(result.candidate_scores)
+    assert summary["action_plan_count"] == len(result.action_plans)
+
+
+def test_portfolio_invalid_schema_display_summary_blocks_misleading_ok() -> None:
+    result = run_csv_input_decision_support_pipeline(
+        pd.read_csv(
+            StringIO(load_decision_support_sample_csv_text("portfolio_invalid_schema"))
+        ),
+        pd.read_csv(StringIO(load_decision_support_sample_csv_text("candidates_good"))),
+    )
+    summary = _display_summary_for_result(result)
+
+    assert summary["validation_label"] == "Missing required fields"
+    assert summary["data_status"] == "validation issue"
+    assert summary["candidate_review_count"] == "N/A"
+    assert summary["action_plan_count"] == "N/A"
+
+
+def test_candidate_invalid_schema_display_summary_blocks_misleading_counts() -> None:
+    result = run_csv_input_decision_support_pipeline(
+        pd.read_csv(StringIO(load_decision_support_sample_csv_text("portfolio_good"))),
+        pd.read_csv(
+            StringIO(load_decision_support_sample_csv_text("candidates_invalid_schema"))
+        ),
+    )
+    summary = _display_summary_for_result(result)
+
+    assert result.validation_errors
+    assert result.decision_support_package.data_status in {"ok", "partial"}
+    assert len(result.candidate_scores) >= 1
+    assert len(result.action_plans) >= 1
+    assert summary["validation_label"] == "Missing required fields"
+    assert summary["data_status"] == "validation issue"
+    assert summary["candidate_review_count"] == "N/A"
+    assert summary["action_plan_count"] == "N/A"
+
+
+def test_required_field_errors_override_package_summary_values() -> None:
+    summary = build_decision_support_display_summary(
+        validation_status="invalid",
+        validation_errors=["Required candidate column missing: symbol."],
+        validation_warnings=[],
+        package_data_status="ok",
+        included_sections_count=9,
+        missing_sections_count=0,
+        candidate_review_count=1,
+        action_plan_count=1,
+    )
+
+    assert summary["data_status"] == "validation issue"
+    assert summary["candidate_review_count"] == "N/A"
+    assert summary["action_plan_count"] == "N/A"
 
 
 def test_valid_candidate_csv_like_frame_normalizes_correctly() -> None:
@@ -459,3 +546,39 @@ def _candidate_frame() -> pd.DataFrame:
             },
         ]
     )
+
+
+def _display_summary_for_result(result) -> dict[str, str | int]:
+    package = result.decision_support_package
+    package_summary = package_summary_from_result(result)
+    return build_decision_support_display_summary(
+        validation_status=result.validation_status,
+        validation_errors=result.validation_errors,
+        validation_warnings=result.validation_warnings,
+        package_data_status=package.data_status,
+        included_sections_count=package_summary["included_sections_count"],
+        missing_sections_count=package_summary["missing_sections_count"],
+        candidate_review_count=package_summary["candidate_review_count"],
+        action_plan_count=package_summary["action_plan_count"],
+    )
+
+
+def package_summary_from_result(result) -> dict[str, int]:
+    package = result.decision_support_package
+    included = [
+        package.portfolio_context,
+        package.risk_insight_summary,
+        package.investment_map_summary,
+        package.candidate_score_summary,
+        package.portfolio_fit_summary,
+        package.insight_report,
+        package.action_plan_summary,
+        package.action_plans,
+        package.market_regime_context,
+    ]
+    return {
+        "included_sections_count": sum(bool(value) for value in included),
+        "missing_sections_count": sum(not bool(value) for value in included),
+        "candidate_review_count": len(result.candidate_scores),
+        "action_plan_count": len(result.action_plans),
+    }

@@ -12,6 +12,7 @@ from src.analysis.decision_support_demo import (
 from src.analysis.decision_support_inputs import (
     build_sample_candidate_csv_text,
     build_sample_portfolio_csv_text,
+    build_decision_support_display_summary,
     get_candidate_csv_schema_rows,
     get_decision_support_sample_csv_manifest,
     get_portfolio_csv_schema_rows,
@@ -61,18 +62,28 @@ def main() -> None:
 def _render_result(result, mode: str) -> None:
     package = result.decision_support_package
     summary = build_decision_support_package_summary(package)
+    display_summary = build_decision_support_display_summary(
+        validation_status=result.validation_status,
+        validation_errors=result.validation_errors,
+        validation_warnings=result.validation_warnings,
+        package_data_status=package.data_status,
+        included_sections_count=len(summary.included_sections),
+        missing_sections_count=len(summary.missing_sections),
+        candidate_review_count=summary.candidate_review_count,
+        action_plan_count=summary.action_plan_count,
+    )
 
     st.divider()
     st.subheader("Decision Support summary")
     cols = st.columns(5)
-    cols[0].metric("Data status", package.data_status)
-    cols[1].metric("Included sections", len(summary.included_sections))
-    cols[2].metric("Missing sections", len(summary.missing_sections))
-    cols[3].metric("Candidates", summary.candidate_review_count)
-    cols[4].metric("Action plans", summary.action_plan_count)
+    cols[0].metric("Data status", display_summary["data_status"])
+    cols[1].metric("Included sections", display_summary["included_sections"])
+    cols[2].metric("Missing sections", display_summary["missing_sections"])
+    cols[3].metric("Candidates", display_summary["candidate_review_count"])
+    cols[4].metric("Action plans", display_summary["action_plan_count"])
 
     if mode == "Uploaded CSV data":
-        _render_validation_results(result)
+        _render_validation_results(result, display_summary)
 
     with st.expander("Safety flags", expanded=True):
         flags = pd.DataFrame(
@@ -158,7 +169,8 @@ def _render_uploaded_csv_mode():
 def _render_safety_notice() -> None:
     st.warning(
         "This page is read-only, decision-support only, and not financial advice. "
-        "It does not connect to brokerage accounts, call external AI services, or execute orders."
+        "It does not provide buy/sell/hold recommendations, target prices, position sizing, "
+        "broker connectivity, account lookup, external AI calls, or order execution."
     )
 
 
@@ -207,24 +219,35 @@ def _render_sample_csv_pack() -> None:
             "These files are sample data for workflow testing only. They are not investment recommendations, and manual review is required."
         )
         manifest = get_decision_support_sample_csv_manifest()
-        st.dataframe(
-            localize_columns(
-                pd.DataFrame(
-                    [
-                        {
-                            "name": item["name"],
-                            "kind": item["kind"],
-                            "scenario": item["scenario"],
-                            "description": item["description"],
-                        }
-                        for item in manifest
-                    ]
-                )
-            ),
-            hide_index=True,
-            width="stretch",
+        _render_sample_group(
+            "Good workflow samples",
+            "Use this pair to test the normal uploaded CSV review flow.",
+            manifest,
+            "good",
         )
-        for item in manifest:
+        _render_sample_group(
+            "Missing optional data samples",
+            "Use this pair to test partial data and validation warning handling.",
+            manifest,
+            "missing_optional_data",
+        )
+        _render_sample_group(
+            "Invalid schema test samples",
+            "These files are intentionally invalid and should show missing required field errors.",
+            manifest,
+            "invalid_schema",
+        )
+
+
+def _render_sample_group(
+    title: str, description: str, manifest: list[dict[str, str]], scenario: str
+) -> None:
+    st.markdown(f"**{title}**")
+    st.caption(description)
+    items = [item for item in manifest if item["scenario"] == scenario]
+    cols = st.columns(2)
+    for index, item in enumerate(items):
+        with cols[index % 2]:
             st.download_button(
                 item["download_label"],
                 data=load_decision_support_sample_csv_text(item["name"]),
@@ -233,14 +256,10 @@ def _render_sample_csv_pack() -> None:
             )
 
 
-def _render_validation_results(result) -> None:
+def _render_validation_results(result, display_summary: dict[str, str | int]) -> None:
     st.subheader("Validation results")
-    status_label = {
-        "ok": "Ready",
-        "partial": "Partial data",
-        "invalid": "Missing required fields",
-    }.get(result.validation_status, "Validation warning")
-    st.metric("Validation status", status_label)
+    st.metric("Validation status", display_summary["validation_label"])
+    st.caption(str(display_summary["validation_note"]))
     if result.validation_errors:
         st.error("\n".join(result.validation_errors))
     if result.validation_warnings:
