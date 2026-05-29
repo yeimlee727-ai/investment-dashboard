@@ -219,9 +219,58 @@ def test_portfolio_summary_excludes_quote_errors_from_market_value(
     summary = broker.get_portfolio_summary()
 
     assert summary["total_market_value"] == 12_000
-    assert summary["total_cost_basis"] == 15_000
+    assert summary["total_cost_basis"] == 10_000
     assert summary["total_unrealized_pnl"] == 2_000
+    assert summary["total_unrealized_pnl_pct"] == 20
     assert summary["quote_error_count"] == 1
+
+
+def test_kr_portfolio_summary_totals_are_consistent(isolated_session) -> None:
+    broker = make_broker(
+        FakeProvider({("KR", "005930"): 70_000, ("KR", "000660"): 130_000})
+    )
+    broker.place_order(OrderRequest("005930", "BUY", 2, 60_000, "KR"))
+    broker.place_order(OrderRequest("000660", "BUY", 1, 100_000, "KR"))
+
+    summary = broker.get_portfolio_summary()
+
+    assert summary["total_market_value_krw"] == 270_000
+    assert summary["total_cost_basis_krw"] == 220_000
+    assert summary["total_unrealized_pnl_krw"] == 50_000
+    assert summary["total_unrealized_pnl_pct"] == 22.73
+    assert summary["total_pnl_krw"] == 50_000
+
+
+def test_us_portfolio_summary_applies_fx_once(isolated_session) -> None:
+    broker = make_broker(
+        FakeProvider({("US", "AAPL"): 200, ("US", "MSFT"): 300}, fx_rate=1400)
+    )
+    broker.place_order(OrderRequest("AAPL", "BUY", 2, 150, "US"))
+    broker.place_order(OrderRequest("MSFT", "BUY", 1, 250, "US"))
+
+    summary = broker.get_portfolio_summary()
+
+    assert summary["total_market_value_krw"] == 980_000
+    assert summary["total_cost_basis_krw"] == 770_000
+    assert summary["total_unrealized_pnl_krw"] == 210_000
+    assert summary["total_unrealized_pnl_pct"] == 27.27
+    assert summary["total_pnl_krw"] == 210_000
+
+
+def test_mixed_kr_us_portfolio_summary_uses_krw_totals(isolated_session) -> None:
+    broker = make_broker(
+        FakeProvider({("KR", "005930"): 70_000, ("US", "GRAB"): 4}, fx_rate=1500)
+    )
+    broker.place_order(OrderRequest("005930", "BUY", 2, 60_000, "KR"))
+    broker.place_order(OrderRequest("GRAB", "BUY", 100, 3, "US"))
+
+    summary = broker.get_portfolio_summary()
+
+    assert summary["total_market_value_krw"] == 740_000
+    assert summary["total_cost_basis_krw"] == 570_000
+    assert summary["total_unrealized_pnl_krw"] == 170_000
+    assert summary["total_unrealized_pnl_pct"] == 29.82
+    assert summary["top1_weight_krw"] == 81.08
 
 
 def test_position_weight_krw_uses_fx_converted_total(isolated_session) -> None:

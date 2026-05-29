@@ -25,6 +25,7 @@ from src.ui_helpers import (
     mock_delete_warning_message,
     portfolio_upload_notice_message,
     safe_display_value,
+    security_display_label,
     safe_krw,
     safe_percent,
 )
@@ -137,6 +138,12 @@ def test_safe_display_formatters() -> None:
     assert safe_display_value(float("nan")) == "-"
     assert safe_krw(1234567.8) == "1,234,568원"
     assert safe_percent(12.345) == "12.35%"
+
+
+def test_security_display_label_prefers_name_and_falls_back_to_symbol() -> None:
+    assert security_display_label(" 삼성전자 ", "005930") == "삼성전자"
+    assert security_display_label("", "005930") == "005930"
+    assert security_display_label(None, "GRAB") == "GRAB"
     assert safe_percent(float("inf")) == "-"
 
 
