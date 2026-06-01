@@ -29,3 +29,11 @@ def test_sample_quote_has_standard_fields_and_legacy_aliases() -> None:
     assert quote["data_source"] == "SAMPLE"
     assert quote["change_rate"] == quote["change_pct"]
     assert quote["trading_value"] == quote["value_traded"]
+
+
+def test_reference_sample_quotes_match_user_valuation_screen() -> None:
+    provider = SampleDataProvider()
+
+    assert provider.get_latest_quote("360750", "KR").price == 28_300
+    assert provider.get_latest_quote("390390", "KR").price == 62_070
+    assert provider.get_latest_quote("453870", "KR").price == 12_465

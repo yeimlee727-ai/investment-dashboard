@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime, time, timedelta, timezone
+from io import StringIO
 from zoneinfo import ZoneInfo
 
+import pandas as pd
 from sqlalchemy import select
 
 from src.broker.base import OrderRequest
 from src.broker.mock_broker import MockBroker
+from src.broker.portfolio_importer import SAMPLE_PORTFOLIO_CSV, validate_portfolio_frame
 from src.data_providers.base import FXRate
 from src.data_providers.sample_provider import SampleDataProvider
 from src.models import RealizedPnlLog, VirtualOrder, VirtualPosition, WatchlistItem
@@ -362,6 +365,43 @@ def test_brokerage_reference_krw_positions_match_table_and_summary_totals(
         2,
     )
     assert summary["top1_weight_krw"] == 37.75
+
+
+def test_default_sample_portfolio_import_matches_reference_screen(
+    isolated_session,
+) -> None:
+    broker = make_broker(SampleDataProvider())
+    frame = pd.read_csv(StringIO(SAMPLE_PORTFOLIO_CSV))
+    validation = validate_portfolio_frame(frame)
+
+    result = broker.import_positions(validation.valid_rows, mode="replace")
+    positions = broker.get_positions()
+    summary = broker.get_portfolio_summary()
+    by_symbol = {position["symbol"]: position for position in positions}
+
+    assert result["current_position_count"] == 3
+    assert set(by_symbol) == {"360750", "390390", "453870"}
+    assert "GRAB" not in by_symbol
+    assert by_symbol["360750"]["name"] == "TIGER 미국S&P500"
+    assert by_symbol["390390"]["name"] == "KODEX 미국반도체"
+    assert by_symbol["453870"]["name"] == "TIGER 인도니프티50"
+    assert by_symbol["360750"]["market_value_krw"] == 877_300
+    assert by_symbol["390390"]["market_value_krw"] == 993_120
+    assert by_symbol["453870"]["market_value_krw"] == 760_365
+    assert summary["total_market_value_krw"] == 2_630_785
+    assert summary["total_market_value_krw"] == sum(
+        float(position["market_value_krw"]) for position in positions
+    )
+    assert summary["total_cost_basis_krw"] == sum(
+        float(position["cost_basis_krw"]) for position in positions
+    )
+    assert summary["total_unrealized_pnl_krw"] == sum(
+        float(position["unrealized_pnl_krw"]) for position in positions
+    )
+    assert summary["total_unrealized_pnl_pct"] == round(
+        summary["total_unrealized_pnl_krw"] / summary["total_cost_basis_krw"] * 100,
+        2,
+    )
 
 
 def test_position_weight_krw_uses_fx_converted_total(isolated_session) -> None:

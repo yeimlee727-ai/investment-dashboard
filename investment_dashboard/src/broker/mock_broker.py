@@ -550,6 +550,9 @@ class MockBroker(Broker):
                             is_open=True,
                         )
                     )
+                    self._upsert_watchlist_name(
+                        session, symbol, market, row.get("name")
+                    )
                     added += 1
                     details.append(
                         self._import_detail(
@@ -569,6 +572,7 @@ class MockBroker(Broker):
                 position.realized_pnl = 0.0
                 position.is_open = True
                 position.updated_at = utc_now()
+                self._upsert_watchlist_name(session, symbol, market, row.get("name"))
                 updated += 1
                 details.append(
                     self._import_detail(
@@ -638,6 +642,28 @@ class MockBroker(Broker):
             for item in items
             if item.name
         }
+
+    def _upsert_watchlist_name(
+        self, session: Session, symbol: str, market: str, name: object
+    ) -> None:
+        name_text = str(name or "").strip()
+        if not name_text:
+            return
+        item = session.execute(
+            select(WatchlistItem).where(WatchlistItem.symbol == symbol)
+        ).scalar_one_or_none()
+        if item is None:
+            session.add(
+                WatchlistItem(
+                    symbol=symbol,
+                    market=market,
+                    name=name_text,
+                    memo="MockBroker 샘플/업로드 종목명",
+                )
+            )
+            return
+        item.name = name_text
+        item.market = market
 
     def _apply_buy(
         self,

@@ -6,6 +6,7 @@ import zipfile
 import pandas as pd
 
 from src.broker.portfolio_importer import (
+    SAMPLE_PORTFOLIO_CSV,
     map_upload_columns,
     normalize_currency,
     normalize_market,
@@ -68,6 +69,24 @@ def test_valid_rows_are_normalized() -> None:
     assert row["currency"] == "USD"
     assert row["quantity"] == 30
     assert row["avg_price"] == 3.56
+
+
+def test_sample_portfolio_csv_matches_reference_three_krw_positions() -> None:
+    frame = pd.read_csv(BytesIO(SAMPLE_PORTFOLIO_CSV.encode("utf-8-sig")))
+
+    result = validate_portfolio_frame(frame)
+
+    assert result.error_count == 0
+    assert result.warning_count == 0
+    assert result.valid_count == 3
+    by_symbol = {row["symbol"]: row for row in result.valid_rows}
+    assert set(by_symbol) == {"360750", "390390", "453870"}
+    assert by_symbol["360750"]["name"] == "TIGER 미국S&P500"
+    assert by_symbol["390390"]["name"] == "KODEX 미국반도체"
+    assert by_symbol["453870"]["name"] == "TIGER 인도니프티50"
+    assert by_symbol["360750"]["quantity"] == 31
+    assert by_symbol["360750"]["avg_price"] == 26_244
+    assert "GRAB" not in by_symbol
 
 
 def test_missing_or_invalid_required_values_are_errors() -> None:
