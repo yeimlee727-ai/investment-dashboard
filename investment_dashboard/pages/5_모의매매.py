@@ -497,6 +497,11 @@ def main() -> None:
         "통합 포트폴리오 비중은 원화 환산 평가금액 기준입니다. "
         "US 종목은 USD 현재가에 USD/KRW 환율을 적용해 원화 환산합니다."
     )
+    if provider.mode == "SAMPLE":
+        st.caption(
+            "SAMPLE 모드는 실제 계좌 조회가 아니라 로컬 기준값으로 구성된 모의 포트폴리오입니다. "
+            "샘플 CSV는 사용자가 제공한 reference 화면의 국내 3종목 평가금액 검증용으로 정렬되어 있습니다."
+        )
 
     risk_engine = RiskEngine(RiskConfig())
     broker = MockBroker(risk_engine=risk_engine, data_provider=provider)

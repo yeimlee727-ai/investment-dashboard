@@ -26,10 +26,9 @@ COLUMN_ALIASES = {
 REQUIRED_COLUMNS = {"symbol", "market", "quantity", "avg_price"}
 
 SAMPLE_PORTFOLIO_CSV = """symbol,name,market,quantity,avg_price,currency,memo
-360750,TIGER 미국S&P500,KR,31,26275,KRW,코어 ETF
-390390,KODEX 미국반도체,KR,16,48589,KRW,반도체 ETF
-453870,TIGER 인도니프티50,KR,61,12899,KRW,인도 ETF
-GRAB,Grab Holdings,US,30,3.56,USD,미국 개별주
+360750,TIGER 미국S&P500,KR,31,26244,KRW,reference 국내 ETF
+390390,KODEX 미국반도체,KR,16,48531,KRW,reference 국내 ETF
+453870,TIGER 인도니프티50,KR,61,12883,KRW,reference 국내 ETF
 """
 
 

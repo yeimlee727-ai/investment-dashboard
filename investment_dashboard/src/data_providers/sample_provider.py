@@ -12,6 +12,12 @@ from src.data_providers.base import BaseDataProvider, FXRate, Quote
 class SampleDataProvider(BaseDataProvider):
     """Deterministic sample data provider for offline MVP usage."""
 
+    KR_REFERENCE_QUOTES = {
+        "360750": 28_300.0,
+        "390390": 62_070.0,
+        "453870": 12_465.0,
+    }
+
     US_SAMPLE_BASE_PRICES = {
         "AAPL": 190.0,
         "MSFT": 420.0,
@@ -75,11 +81,27 @@ class SampleDataProvider(BaseDataProvider):
         return df
 
     def get_latest_quote(self, symbol: str, market: str = "KR") -> Quote:
+        symbol = symbol.upper()
+        market = market.upper()
+        if market == "KR" and symbol in self.KR_REFERENCE_QUOTES:
+            return Quote(
+                symbol=symbol,
+                market=market,
+                price=self.KR_REFERENCE_QUOTES[symbol],
+                change_pct=0.0,
+                volume=0.0,
+                value_traded=0.0,
+                currency="KRW",
+                data_source="SAMPLE",
+                provider=self.get_provider_name(),
+                as_of=datetime.now().isoformat(timespec="seconds"),
+                error=None,
+            )
         df = self.get_price_history(symbol=symbol, market=market, period=30)
         latest = df.iloc[-1]
         return Quote(
-            symbol=symbol.upper(),
-            market=market.upper(),
+            symbol=symbol,
+            market=market,
             price=float(latest["close"]),
             change_pct=float(latest["change_pct"]),
             volume=float(latest["volume"]),
