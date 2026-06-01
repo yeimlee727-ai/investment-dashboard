@@ -584,13 +584,13 @@ def get_data_mode_status(
         )
     if mode == "REAL_WITH_FALLBACK":
         return (
-            "REAL DATA MODE",
-            "외부 조회 데이터를 사용 중입니다. 지연/오차 가능성이 있습니다.",
+            "PUBLIC DATA MODE",
+            "공개/외부 시세 조회 데이터를 사용 중입니다. 실제 계좌나 체결 데이터가 아니며 지연/오차 가능성이 있습니다.",
             "info",
         )
     return (
         "SAMPLE MODE",
-        "실제 시세가 아닌 샘플 데이터입니다.",
+        "실제 계좌 조회가 아닌 로컬 샘플 데이터입니다.",
         "warning",
     )
 
@@ -654,8 +654,8 @@ def select_data_mode() -> DataMode:
         ["SAMPLE", "REAL_WITH_FALLBACK"],
         index=0,
         help=(
-            "SAMPLE은 생성된 샘플 데이터를 사용합니다. "
-            "REAL_WITH_FALLBACK은 외부 시세 조회를 시도하고 실패하면 샘플 데이터를 표시합니다."
+            "SAMPLE은 로컬 샘플 데이터를 사용합니다. "
+            "REAL_WITH_FALLBACK은 공개/외부 시세 조회를 시도하고 실패하면 샘플 데이터를 표시합니다. 실제 계좌 조회가 아닙니다."
         ),
     )
     return selected  # type: ignore[return-value]
@@ -679,6 +679,6 @@ def render_data_warning(provider: MarketDataProvider | None = None) -> None:
     else:
         render_alert(
             f"{badge}: {message} "
-            "이 앱은 실제 주문을 하지 않으며 투자 판단용으로 사용하면 안 됩니다.",
+            "이 앱은 실제 주문을 하지 않으며 단독 투자 판단이나 주문 지시로 사용하면 안 됩니다.",
             tone,
         )

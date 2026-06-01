@@ -41,8 +41,10 @@ def test_data_mode_status_messages() -> None:
     fallback = get_data_mode_status("REAL_WITH_FALLBACK", is_fallback=True)
 
     assert sample[0] == "SAMPLE MODE"
+    assert "실제 계좌 조회가 아닌" in sample[1]
     assert sample[2] == "warning"
-    assert real[0] == "REAL DATA MODE"
+    assert real[0] == "PUBLIC DATA MODE"
+    assert "실제 계좌" in real[1]
     assert real[2] == "info"
     assert fallback[0] == "FALLBACK MODE"
     assert fallback[2] == "warning"

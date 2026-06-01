@@ -93,7 +93,7 @@ def _render_result(result, mode: str) -> None:
 
     _render_decision_cockpit(result)
 
-    with st.expander("Safety flags", expanded=True):
+    with st.expander("Safety flags", expanded=False):
         flags = pd.DataFrame(
             [
                 {"flag": key, "enabled": value}
@@ -129,7 +129,10 @@ def _render_result(result, mode: str) -> None:
 
     _render_local_report_downloads(result)
 
-    with st.expander("LLM-ready payload preview", expanded=mode == "Uploaded CSV data"):
+    with st.expander("LLM-ready payload preview", expanded=False):
+        st.caption(
+            "This JSON is a local, copy/download-ready payload preview only. No external AI or API call is made."
+        )
         payload_text = json.dumps(
             result.llm_ready_payload, ensure_ascii=False, indent=2
         )
@@ -314,7 +317,7 @@ def _render_records_table(records: list[dict], empty_message: str) -> None:
 def _render_local_report_downloads(result) -> None:
     st.subheader("Local Report Downloads")
     st.caption(
-        "Download local Excel or HTML files generated from the current decision-support package."
+        "Download local Excel or HTML files generated from the current decision-support package. These files are for manual review only."
     )
     excel_bytes = build_decision_support_excel_bytes(
         result.decision_support_package,
